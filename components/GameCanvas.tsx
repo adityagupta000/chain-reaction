@@ -1,15 +1,21 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import { useBoardState, useSelectedCell, useIsSubmittingMove } from '@/lib/store';
-import { useSocketEmit } from '@/hooks/useSocket';
-import { BoardRenderer } from '@/lib/rendering';
-import { nanoid } from 'nanoid';
+import { useEffect, useRef, useState } from "react";
+import {
+  useBoardState,
+  useSelectedCell,
+  useIsSubmittingMove,
+  useRoom,
+  useGameStore,
+} from "@/lib/store";
+import { useSocketEmit } from "@/hooks/useSocket";
+import { BoardRenderer } from "@/lib/rendering";
+import type { PlayerColor } from "@/lib/types";
 
 interface GameCanvasProps {
   roomId: string;
   playerId: string;
-  playerColor: 'blue' | 'red';
+  playerColor: PlayerColor;
   isMyTurn: boolean;
 }
 
@@ -22,58 +28,109 @@ export function GameCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<BoardRenderer | null>(null);
   const boardState = useBoardState();
+  const room = useRoom();
   const selectedCell = useSelectedCell();
   const isSubmittingMove = useIsSubmittingMove();
+  const gameError = useGameStore((s) => s.error);
   const { submitMove } = useSocketEmit();
-  const [loading, setLoading] = useState(true);
 
-  // Initialize renderer
+  const [turnWarning, setTurnWarning] = useState(false);
+  const [errorWarning, setErrorWarning] = useState(false);
+  const turnWarningTimer = useRef<ReturnType<typeof setTimeout>>();
+  const errorWarningTimer = useRef<ReturnType<typeof setTimeout>>();
+  const lastErrorRef = useRef<string>("");
+
+  // Keep latest values in refs so click handler never goes stale
+  const isMyTurnRef = useRef(isMyTurn);
+  const boardStateRef = useRef(boardState);
+  const isSubmittingRef = useRef(isSubmittingMove);
+  const playerIdRef = useRef(playerId);
+  const roomIdRef = useRef(roomId);
+
+  isMyTurnRef.current = isMyTurn;
+  boardStateRef.current = boardState;
+  isSubmittingRef.current = isSubmittingMove;
+  playerIdRef.current = playerId;
+  roomIdRef.current = roomId;
+
+  const gridRows = room?.gridRows || 9;
+  const gridCols = room?.gridCols || 6;
+
+  // Watch for game errors and show warning popup
+  useEffect(() => {
+    if (gameError && gameError !== lastErrorRef.current) {
+      lastErrorRef.current = gameError;
+      setErrorWarning(true);
+      if (errorWarningTimer.current) clearTimeout(errorWarningTimer.current);
+      errorWarningTimer.current = setTimeout(
+        () => setErrorWarning(false),
+        2500,
+      );
+    }
+  }, [gameError]);
+
+  // Initialize renderer ONCE (only re-create if grid size changes)
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    const renderer = new BoardRenderer(canvasRef.current);
+    const renderer = new BoardRenderer(canvasRef.current, gridRows, gridCols);
     rendererRef.current = renderer;
 
-    // Add click handler
-    const handleCanvasClick = (e: MouseEvent) => {
-      if (!isMyTurn || !boardState || isSubmittingMove) return;
+    return () => {
+      renderer.destroy();
+      rendererRef.current = null;
+    };
+  }, [gridRows, gridCols]);
 
-      const rect = canvasRef.current!.getBoundingClientRect();
+  // Click handler — uses refs so it never goes stale
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleCanvasClick = (e: MouseEvent) => {
+      if (
+        !boardStateRef.current ||
+        isSubmittingRef.current ||
+        !rendererRef.current
+      )
+        return;
+
+      // Show warning if it's not this player's turn
+      if (!isMyTurnRef.current) {
+        setTurnWarning(true);
+        if (turnWarningTimer.current) clearTimeout(turnWarningTimer.current);
+        turnWarningTimer.current = setTimeout(
+          () => setTurnWarning(false),
+          1500,
+        );
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-      // Convert click coordinates to grid position
-      // Import at top of component to avoid dynamic imports
-      // Using hardcoded constants for click detection
-      const BOARD_PADDING = 20;
-      const CELL_SIZE = 60;
-      const CELL_GAP = 4;
-      const col = Math.floor((x - BOARD_PADDING) / (CELL_SIZE + CELL_GAP));
-      const row = Math.floor((y - BOARD_PADDING) / (CELL_SIZE + CELL_GAP));
-
-      if (row >= 0 && row < 6 && col >= 0 && col < 6) {
-        // Submit move
-        const move = {
-          playerId,
+      const cell = rendererRef.current.getCellFromPixel(x, y);
+      if (cell) {
+        const [row, col] = cell;
+        submitMove(roomIdRef.current, {
+          playerId: playerIdRef.current,
           row,
           col,
           timestamp: Date.now(),
-        };
-
-        submitMove(roomId, move);
+        });
       }
     };
 
-    canvasRef.current.addEventListener('click', handleCanvasClick);
-    setLoading(false);
-
+    canvas.addEventListener("click", handleCanvasClick);
     return () => {
-      canvasRef.current?.removeEventListener('click', handleCanvasClick);
-      renderer.destroy();
+      canvas.removeEventListener("click", handleCanvasClick);
+      if (turnWarningTimer.current) clearTimeout(turnWarningTimer.current);
+      if (errorWarningTimer.current) clearTimeout(errorWarningTimer.current);
     };
-  }, [isMyTurn, boardState, isSubmittingMove, playerId, roomId, submitMove]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Render board
+  // Render board whenever state changes
   useEffect(() => {
     if (!boardState || !rendererRef.current) return;
 
@@ -83,28 +140,52 @@ export function GameCanvas({
       rendererRef.current.setSelectedCell(null, null);
     }
 
-    // Start rendering loop
-    rendererRef.current.render(boardState.grid);
+    rendererRef.current.renderOnce(boardState.grid);
   }, [boardState, selectedCell]);
 
+  // Update grid color based on whose turn it is
+  useEffect(() => {
+    if (!rendererRef.current || !boardState) return;
+
+    // Find the current turn player
+    const currentRoom = room;
+    if (currentRoom?.players) {
+      const turnPlayer = currentRoom.players.find(
+        (p) => p.id === boardState.turn,
+      );
+      if (turnPlayer) {
+        rendererRef.current.setGridColor(turnPlayer.color);
+      }
+    }
+  }, [boardState?.turn, room?.players]);
+
   return (
-    <div className="relative w-full aspect-square bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
+    <div className="relative w-full h-full bg-black overflow-hidden">
       <canvas
         ref={canvasRef}
-        className="w-full h-full cursor-pointer"
+        className="w-full h-full"
         style={{
-          opacity: isSubmittingMove ? 0.5 : 1,
-          pointerEvents: isMyTurn && !isSubmittingMove ? 'auto' : 'none',
+          cursor: isMyTurn && !isSubmittingMove ? "pointer" : "default",
+          opacity: isSubmittingMove ? 0.7 : 1,
         }}
       />
-      {!isMyTurn && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-          <p className="text-white font-semibold">Opponent's Turn</p>
+      {isSubmittingMove && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
         </div>
       )}
-      {isSubmittingMove && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      {turnWarning && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-red-600/90 text-white px-6 py-3 rounded-lg font-semibold text-sm shadow-lg backdrop-blur-sm">
+            Not your turn!
+          </div>
+        </div>
+      )}
+      {errorWarning && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-red-600/40 text-red-50 px-6 py-3 rounded-lg font-semibold text-sm shadow-lg backdrop-blur-md border border-red-500/30">
+            {gameError}
+          </div>
         </div>
       )}
     </div>

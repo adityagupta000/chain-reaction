@@ -4,45 +4,56 @@ import {
   GameMove,
   MoveValidationResult,
   ExplosionResult,
-} from './types';
-
-const GRID_SIZE = 6;
-const MAX_MASS = 4;
-const SPAWN_PROBABILITY = 0.4;
+  PlayerColor,
+} from "./types";
 
 // ============================================================================
-// BOARD INITIALIZATION
+// CRITICAL MASS (number of adjacent cells for a position)
 // ============================================================================
 
-export function initializeBoard(): (Orb | null)[][] {
-  const grid: (Orb | null)[][] = Array(GRID_SIZE)
-    .fill(null)
-    .map(() => Array(GRID_SIZE).fill(null));
-
-  // Spawn random orbs
-  for (let r = 0; r < GRID_SIZE; r++) {
-    for (let c = 0; c < GRID_SIZE; c++) {
-      if (Math.random() < SPAWN_PROBABILITY) {
-        const colors: Array<'blue' | 'red' | 'neutral'> = [
-          'blue',
-          'red',
-          'neutral',
-        ];
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        grid[r][c] = {
-          color,
-          mass: Math.floor(Math.random() * 3) + 1, // 1-3
-        };
-      }
-    }
-  }
-
-  return grid;
+export function getCriticalMass(
+  row: number,
+  col: number,
+  rows: number,
+  cols: number,
+): number {
+  let mass = 4;
+  if (row === 0 || row === rows - 1) mass--;
+  if (col === 0 || col === cols - 1) mass--;
+  return mass;
 }
 
-export function createBoardState(hostId: string): BoardState {
+function getAdjacentCells(
+  row: number,
+  col: number,
+  rows: number,
+  cols: number,
+): [number, number][] {
+  const cells: [number, number][] = [];
+  if (row > 0) cells.push([row - 1, col]);
+  if (row < rows - 1) cells.push([row + 1, col]);
+  if (col > 0) cells.push([row, col - 1]);
+  if (col < cols - 1) cells.push([row, col + 1]);
+  return cells;
+}
+
+// ============================================================================
+// BOARD INITIALIZATION (empty board for Chain Reaction)
+// ============================================================================
+
+export function initializeBoard(rows: number, cols: number): (Orb | null)[][] {
+  return Array(rows)
+    .fill(null)
+    .map(() => Array(cols).fill(null));
+}
+
+export function createBoardState(
+  hostId: string,
+  rows: number = 9,
+  cols: number = 6,
+): BoardState {
   return {
-    grid: initializeBoard(),
+    grid: initializeBoard(rows, cols),
     scores: { [hostId]: 0 },
     turn: hostId,
     turnNumber: 0,
@@ -58,135 +69,125 @@ export function createBoardState(hostId: string): BoardState {
 export function validateMove(
   move: GameMove,
   boardState: BoardState,
-  currentPlayerId: string
+  currentPlayerId: string,
+  playerColor?: PlayerColor,
 ): MoveValidationResult {
-  // Check if it's the player's turn
+  const rows = boardState.grid.length;
+  const cols = boardState.grid[0]?.length || 0;
+
   if (move.playerId !== currentPlayerId) {
-    return { valid: false, reason: 'Not your turn' };
+    return { valid: false, reason: "Not your turn" };
   }
 
-  // Check grid bounds
-  if (
-    move.row < 0 ||
-    move.row >= GRID_SIZE ||
-    move.col < 0 ||
-    move.col >= GRID_SIZE
-  ) {
-    return { valid: false, reason: 'Out of bounds' };
+  if (move.row < 0 || move.row >= rows || move.col < 0 || move.col >= cols) {
+    return { valid: false, reason: "Out of bounds" };
   }
 
-  // Check if cell is empty
   const cell = boardState.grid[move.row][move.col];
-  if (cell === null) {
-    return { valid: false, reason: 'Cell is empty' };
-  }
-
-  // Check if orb belongs to player or is neutral
-  if (cell.color !== 'neutral' && cell.color !== move.playerId) {
-    // This assumes playerId can be matched to color - adjust if needed
-    return { valid: false, reason: 'Not your orb' };
+  // Chain Reaction: can place on empty cell or cell with your own color
+  if (cell !== null && playerColor && cell.color !== playerColor) {
+    return { valid: false, reason: "Cell belongs to another player" };
   }
 
   return { valid: true };
 }
 
 // ============================================================================
-// GAME LOGIC: EXPLOSION & CHAIN REACTIONS
+// GAME LOGIC: CHAIN REACTION EXPLOSIONS
 // ============================================================================
-
-function getAdjacentCells(row: number, col: number): [number, number][] {
-  const adjacent: [number, number][] = [];
-  const directions = [
-    [-1, 0],
-    [1, 0],
-    [0, -1],
-    [0, 1],
-  ]; // up, down, left, right
-
-  for (const [dr, dc] of directions) {
-    const nr = row + dr;
-    const nc = col + dc;
-    if (nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE) {
-      adjacent.push([nr, nc]);
-    }
-  }
-
-  return adjacent;
-}
-
-function bfsExplosion(
-  grid: (Orb | null)[][],
-  startRow: number,
-  startCol: number,
-  playerColor: 'blue' | 'red'
-): {
-  newGrid: (Orb | null)[][];
-  affectedCells: Set<string>;
-  scoreGain: number;
-} {
-  const newGrid = grid.map((row) => [...row]);
-  const affectedCells = new Set<string>();
-  const queue: [number, number][] = [];
-  const visited = new Set<string>();
-
-  // Start with the clicked cell
-  const startKey = `${startRow},${startCol}`;
-  queue.push([startRow, startCol]);
-  visited.add(startKey);
-
-  let scoreGain = 0;
-
-  while (queue.length > 0) {
-    const [row, col] = queue.shift()!;
-    const cell = newGrid[row][col];
-
-    if (cell === null) continue;
-
-    affectedCells.add(`${row},${col}`);
-    scoreGain += cell.mass;
-    newGrid[row][col] = null;
-
-    // If this was a player-colored orb, trigger chain explosion to adjacent same-color orbs
-    if (cell.color === playerColor || cell.color === 'neutral') {
-      for (const [nr, nc] of getAdjacentCells(row, col)) {
-        const key = `${nr},${nc}`;
-        if (!visited.has(key)) {
-          const adjacent = newGrid[nr][nc];
-          if (
-            adjacent &&
-            (adjacent.color === playerColor || adjacent.color === 'neutral')
-          ) {
-            visited.add(key);
-            queue.push([nr, nc]);
-          }
-        }
-      }
-    }
-  }
-
-  return { newGrid, affectedCells, scoreGain };
-}
 
 export function applyMove(
   boardState: BoardState,
   move: GameMove,
-  playerColor: 'blue' | 'red'
+  playerColor: PlayerColor,
 ): ExplosionResult {
-  const { newGrid, affectedCells, scoreGain } = bfsExplosion(
-    boardState.grid,
-    move.row,
-    move.col,
-    playerColor
+  const rows = boardState.grid.length;
+  const cols = boardState.grid[0]?.length || 0;
+  const grid = boardState.grid.map((r) =>
+    r.map((cell) => (cell ? { ...cell } : null)),
   );
+  const cellsAffected = new Set<string>();
 
+  // Place orb
+  if (grid[move.row][move.col] === null) {
+    grid[move.row][move.col] = { color: playerColor, mass: 1 };
+  } else {
+    grid[move.row][move.col]!.mass += 1;
+    grid[move.row][move.col]!.color = playerColor;
+  }
+  cellsAffected.add(`${move.row},${move.col}`);
+
+  // Process chain reactions
+  const queue: [number, number][] = [];
+  if (
+    grid[move.row][move.col]!.mass >=
+    getCriticalMass(move.row, move.col, rows, cols)
+  ) {
+    queue.push([move.row, move.col]);
+  }
+
+  const MAX_ITER = rows * cols * 50;
+  let iter = 0;
+
+  while (queue.length > 0 && iter < MAX_ITER) {
+    iter++;
+    const [r, c] = queue.shift()!;
+    const cell = grid[r][c];
+    if (!cell) continue;
+
+    const critMass = getCriticalMass(r, c, rows, cols);
+    if (cell.mass < critMass) continue;
+
+    // Explode: distribute to neighbors
+    const neighbors = getAdjacentCells(r, c, rows, cols);
+    cell.mass -= neighbors.length;
+    if (cell.mass <= 0) {
+      grid[r][c] = null;
+    }
+    cellsAffected.add(`${r},${c}`);
+
+    for (const [nr, nc] of neighbors) {
+      const nb = grid[nr][nc];
+      if (nb === null) {
+        grid[nr][nc] = { color: playerColor, mass: 1 };
+      } else {
+        nb.mass += 1;
+        nb.color = playerColor; // Capture
+      }
+      cellsAffected.add(`${nr},${nc}`);
+
+      if (grid[nr][nc]!.mass >= getCriticalMass(nr, nc, rows, cols)) {
+        queue.push([nr, nc]);
+      }
+    }
+  }
+
+  // Scores will be recomputed by server via computeScores
   const scores = { ...boardState.scores };
-  scores[move.playerId] = (scores[move.playerId] || 0) + scoreGain;
+  return { scores, newGrid: grid, cellsAffected };
+}
 
-  return {
-    scores,
-    newGrid,
-    cellsAffected: affectedCells,
-  };
+// ============================================================================
+// SCORE COMPUTATION
+// ============================================================================
+
+export function computeScores(
+  grid: (Orb | null)[][],
+  players: { id: string; color: PlayerColor }[],
+): Record<string, number> {
+  const colorCounts: Record<string, number> = {};
+  for (const row of grid) {
+    for (const cell of row) {
+      if (cell) {
+        colorCounts[cell.color] = (colorCounts[cell.color] || 0) + cell.mass;
+      }
+    }
+  }
+  const scores: Record<string, number> = {};
+  for (const p of players) {
+    scores[p.id] = colorCounts[p.color] || 0;
+  }
+  return scores;
 }
 
 // ============================================================================
@@ -195,7 +196,7 @@ export function applyMove(
 
 export function getNextTurn(
   currentPlayerId: string,
-  playerIds: string[]
+  playerIds: string[],
 ): string {
   const currentIndex = playerIds.indexOf(currentPlayerId);
   const nextIndex = (currentIndex + 1) % playerIds.length;
@@ -203,31 +204,37 @@ export function getNextTurn(
 }
 
 export function getValidMoves(boardState: BoardState): [number, number][] {
-  const moves: [number, number][] = [];
+  return [];
+}
 
-  for (let r = 0; r < GRID_SIZE; r++) {
-    for (let c = 0; c < GRID_SIZE; c++) {
-      if (boardState.grid[r][c] !== null) {
-        moves.push([r, c]);
+// ============================================================================
+// GAME OVER
+// ============================================================================
+
+export function isGameOver(boardState: BoardState): boolean {
+  // Need at least one full round before checking
+  if (boardState.turnNumber < 2) return false;
+
+  const colorsOnBoard = new Set<string>();
+  let hasAnyOrbs = false;
+
+  for (const row of boardState.grid) {
+    for (const cell of row) {
+      if (cell) {
+        hasAnyOrbs = true;
+        colorsOnBoard.add(cell.color);
       }
     }
   }
 
-  return moves;
-}
-
-// ============================================================================
-// UTILITIES
-// ============================================================================
-
-export function isGameOver(boardState: BoardState): boolean {
-  // Game is over if no moves are available
-  return getValidMoves(boardState).length === 0;
+  if (!hasAnyOrbs) return false;
+  // Game over when only 1 player's color remains
+  return colorsOnBoard.size <= 1;
 }
 
 export function getWinner(
   scores: Record<string, number>,
-  players: Array<{ id: string; name: string }>
+  players: Array<{ id: string; name: string }>,
 ): { id: string; name: string } | null {
   let maxScore = -1;
   let winnerId: string | null = null;
@@ -245,6 +252,3 @@ export function getWinner(
 
   return null;
 }
-
-export const GRID_SIZE_EXPORT = GRID_SIZE;
-export const MAX_MASS_EXPORT = MAX_MASS;

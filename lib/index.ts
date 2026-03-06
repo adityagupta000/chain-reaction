@@ -4,7 +4,7 @@
  */
 
 // Types
-export * from './types';
+export * from "./types";
 
 // Game Logic
 export {
@@ -16,12 +16,12 @@ export {
   getValidMoves,
   isGameOver,
   getWinner,
-  GRID_SIZE_EXPORT as GRID_SIZE,
-  MAX_MASS_EXPORT as MAX_MASS,
-} from './gameEngine';
+  computeScores,
+  getCriticalMass,
+} from "./gameEngine";
 
 // State Management
-export { useGameStore } from './store';
+export { useGameStore } from "./store";
 export {
   useGamePhase,
   useCurrentPlayer,
@@ -35,18 +35,13 @@ export {
   useGameHistory,
   useIsMyTurn,
   useScores,
-} from './store';
+} from "./store";
 
 // Rendering
-export {
-  ParticleSystem,
-  OrbAnimator,
-  ScreenShaker,
-  BoardRenderer,
-} from './rendering';
+export { ParticleSystem, ScreenShaker, BoardRenderer } from "./rendering";
 
 // Sound
-export { getSoundManager, SoundManager } from './soundManager';
+export { getSoundManager, SoundManager } from "./soundManager";
 
 // Constants
-export * from './constants';
+export * from "./constants";

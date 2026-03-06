@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:server": "node --loader tsx server/index.ts",
+    "dev:server": "node --import tsx server/index.ts",
     "dev:both": "concurrently \"pnpm dev\" \"pnpm dev:server\"",
     "build": "next build",
     "start": "next start",

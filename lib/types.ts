@@ -2,22 +2,36 @@
 // GAME STATE TYPES
 // ============================================================================
 
-export type GamePhase = 'lobby' | 'waiting' | 'playing' | 'gameover';
-export type PlayerRole = 'host' | 'guest';
-export type GameOutcome = 'win' | 'loss' | 'draw';
+export type GamePhase = "lobby" | "waiting" | "playing" | "gameover";
+export type PlayerRole = "host" | "guest";
+export type GameOutcome = "win" | "loss" | "draw";
+
+export type PlayerColor = "blue" | "red" | "green" | "yellow" | "purple";
+
+export const AVAILABLE_COLORS: {
+  value: PlayerColor;
+  label: string;
+  hex: string;
+}[] = [
+  { value: "blue", label: "Blue", hex: "#3B82F6" },
+  { value: "red", label: "Red", hex: "#EF4444" },
+  { value: "green", label: "Green", hex: "#22C55E" },
+  { value: "yellow", label: "Yellow", hex: "#EAB308" },
+  { value: "purple", label: "Purple", hex: "#A855F7" },
+];
 
 export interface Player {
   id: string;
   name: string;
   role: PlayerRole;
-  color: 'blue' | 'red';
+  color: PlayerColor;
   score: number;
   isActive: boolean; // whose turn it is
   socketId?: string;
 }
 
 export interface Orb {
-  color: 'blue' | 'red' | 'neutral';
+  color: PlayerColor | "neutral";
   mass: number;
 }
 
@@ -35,10 +49,13 @@ export interface GameRoom {
   name: string;
   host: Player;
   guest?: Player;
-  status: 'waiting' | 'playing' | 'finished';
+  players: Player[];
+  status: "waiting" | "playing" | "finished";
   boardState: BoardState;
   createdAt: number;
   maxPlayers: number;
+  gridRows: number;
+  gridCols: number;
 }
 
 export interface GameMove {
@@ -60,7 +77,7 @@ export interface ExplosionResult {
 }
 
 export interface AnimationFrame {
-  type: 'move' | 'explosion' | 'shake' | 'spawn' | 'particle';
+  type: "move" | "explosion" | "shake" | "spawn" | "particle";
   timestamp: number;
   duration: number;
   data: Record<string, any>;
@@ -98,27 +115,35 @@ export interface ChatMessage {
 
 export interface SocketEvents {
   // Emit from client
-  'player:join': { playerName: string };
-  'room:create': { roomName: string };
-  'room:join': { roomId: string; playerName: string };
-  'game:start': { roomId: string };
-  'game:move': { roomId: string; move: GameMove };
-  'chat:send': { roomId: string; message: string };
+  "player:join": { playerName: string };
+  "room:create": {
+    roomName: string;
+    maxPlayers: number;
+    color: PlayerColor;
+    gridRows: number;
+    gridCols: number;
+  };
+  "room:join": { roomId: string; playerName: string; color: PlayerColor };
+  "color:change": { roomId: string; color: PlayerColor };
+  "game:start": { roomId: string };
+  "game:move": { roomId: string; move: GameMove };
+  "chat:send": { roomId: string; message: string };
 
   // Receive on client
-  'player:joined': { players: Player[] };
-  'room:created': { room: GameRoom };
-  'room:updated': { room: GameRoom };
-  'game:started': { boardState: BoardState };
-  'game:moveReceived': {
+  "player:joined": { players: Player[] };
+  "room:created": { room: GameRoom };
+  "room:updated": { room: GameRoom };
+  "color:unavailable": { message: string; takenColors: PlayerColor[] };
+  "game:started": { boardState: BoardState };
+  "game:moveReceived": {
     move: GameMove;
     boardState: BoardState;
     scores: Record<string, number>;
   };
-  'game:invalid-move': { reason: string };
-  'game:finished': { outcome: GameOutcome; winner?: Player };
-  'chat:message': ChatMessage;
-  'player:left': { playerId: string };
+  "game:invalid-move": { reason: string };
+  "game:finished": { outcome: GameOutcome; winner?: Player };
+  "chat:message": ChatMessage;
+  "player:left": { playerId: string };
 }
 
 // ============================================================================
