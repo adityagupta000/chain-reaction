@@ -165,32 +165,37 @@ export function GameCanvas({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Render board whenever state changes
-  useEffect(() => {
-    if (!boardState || !rendererRef.current) return;
+  // Extract the current turn player's color to use as a stable dependency
+  const currentTurnPlayerColor =
+    room?.players?.[boardState?.currentPlayerIndex ?? -1]?.color || null;
+  const selectedCellKey = selectedCell
+    ? `${selectedCell[0]},${selectedCell[1]}`
+    : null;
 
+  // Unified effect: set grid color and render board
+  useEffect(() => {
+    if (!boardState || !rendererRef.current || !room?.players) return;
+
+    // Set grid color based on current turn player
+    if (currentTurnPlayerColor) {
+      rendererRef.current.setGridColor(currentTurnPlayerColor);
+    }
+
+    // Update selected cell
     if (selectedCell) {
       rendererRef.current.setSelectedCell(selectedCell[0], selectedCell[1]);
     } else {
       rendererRef.current.setSelectedCell(null, null);
     }
 
-    rendererRef.current.renderOnce(boardState.grid, room?.players || []);
-  }, [boardState, selectedCell, room?.players]);
-
-  // Update grid color based on whose turn it is
-  useEffect(() => {
-    if (!rendererRef.current || !boardState) return;
-
-    // Find the current turn player by index
-    const currentRoom = room;
-    if (currentRoom?.players && boardState.currentPlayerIndex !== undefined) {
-      const turnPlayer = currentRoom.players[boardState.currentPlayerIndex];
-      if (turnPlayer) {
-        rendererRef.current.setGridColor(turnPlayer.color);
-      }
-    }
-  }, [boardState?.currentPlayerIndex, room?.players]);
+    // Render with the color already set
+    rendererRef.current.renderOnce(boardState.grid, room.players);
+  }, [
+    currentTurnPlayerColor,
+    selectedCellKey,
+    boardState?.grid.length,
+    room?.players.length,
+  ]);
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden">
