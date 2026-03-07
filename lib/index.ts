@@ -10,14 +10,14 @@ export * from "./types";
 export {
   initializeBoard,
   createBoardState,
-  validateMove,
+  isValidMove,
   applyMove,
-  getNextTurn,
-  getValidMoves,
+  getNextActivePlayer,
   isGameOver,
   getWinner,
   computeScores,
   getCriticalMass,
+  getEliminatedPlayers,
 } from "./gameEngine";
 
 // State Management

@@ -1,343 +1,101 @@
-# Chain Reaction - Multiplayer Game
+# Chain Reaction — Multiplayer Strategy Game
 
-> A fast-paced, real-time multiplayer strategy game built with Next.js, React, Socket.io, and Canvas.
+> A real-time multiplayer chain reaction strategy game built with Next.js 16, React 19, Canvas 2D, and Socket.io. 2–5 players take turns placing orbs on configurable grids — cells that reach critical mass explode, capturing neighbors in BFS chain reactions. Last player standing wins.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](#license)
 
-## Quick Demo
+## Quick Start
 
 ```bash
-# Install & run (takes 2 minutes)
 pnpm install
-pnpm run dev:both
-
-# Open http://localhost:3000
-# Create room, join from another tab, play!
+pnpm dev:both       # Client on :3000, Server on :3001
 ```
+
+Open `http://localhost:3000`, create a room, share the room ID, and play!
+
+If no server is running, the game automatically falls back to offline mode with an AI opponent.
 
 ## Features
 
-- 🎮 **Real-time Multiplayer** - Instant synchronization with Socket.io
-- 🎨 **Beautiful Graphics** - 60fps Canvas rendering with animations
-- 🔄 **Chain Reactions** - BFS algorithm for explosive orb expansions
-- 📱 **Responsive Design** - Works on desktop and mobile
-- 🔊 **Sound Effects** - Web Audio API synthesis
-- 🛡️ **Secure** - Server-side move validation
-- 📊 **Live Scoring** - Real-time score updates
-- ⏱️ **Turn Timer** - 30-second turns with auto-submit
-- 💾 **Persistent** - Optional Redis for game state
-- 📖 **Well Documented** - 8+ documentation files
+- **2–5 player** real-time multiplayer via Socket.io
+- **Configurable grids**: 6×6, 8×5, 9×6, 10×8, 12×8
+- **BFS chain reaction** explosions with animated orb flights and screen shake
+- **4-layer orb rendering**: glow, body gradient, rotating texture stripes, specular highlight
+- **Orbiting multi-orb cells** with speed increasing near critical mass
+- **Per-turn grid color** tinting based on current player
+- **Web Audio API** synthesized sound effects
+- **Server-authoritative** move validation and game logic
+- **Redis-backed** persistence with automatic in-memory fallback
+- **Offline mode** via MockSocket for development
 
-## How to Play
+## Game Rules
 
-1. **Enter your name** in the lobby
-2. **Create a room** or **join with room ID**
-3. **Wait for opponent** or **click Start**
-4. **Click orbs** to expand them
-5. **Connected orbs** trigger chain reactions
-6. **Earn points** equal to orb mass (1-4)
-7. **Highest score wins!**
-
-## Getting Started
-
-### Prerequisites
-- Node.js 18+
-- pnpm (or npm/yarn)
-
-### Installation
-
-```bash
-# Clone or download this project
-cd chain-reaction
-
-# Install dependencies
-pnpm install
-
-# Start development server
-pnpm run dev:both
-
-# Open http://localhost:3000
-```
-
-**That's it!** The app will:
-- Start Next.js frontend on port 3000
-- Start Socket.io server on port 3001
-- Auto-reload on file changes
+1. Place orbs on **empty cells** or **cells you own**
+2. Cells explode at **critical mass** (corners: 2, edges: 3, center: 4)
+3. Explosions send 1 orb to each neighbor, **capturing** them
+4. Chain reactions cascade across the board
+5. Game can't end until all players have moved once
+6. Last player with orbs on the board **wins**
 
 ## Documentation
 
-| Document | Purpose |
-|----------|---------|
-| **[START_HERE.md](./START_HERE.md)** | Entry point - read this first |
-| **[QUICK_START.md](./QUICK_START.md)** | 2-minute setup & quick reference |
-| **[SETUP.md](./SETUP.md)** | Detailed setup & deployment guide |
-| **[GAME_README.md](./GAME_README.md)** | Game rules & mechanics |
-| **[API_DOCS.md](./API_DOCS.md)** | Complete API reference |
-| **[BUILD_SUMMARY.md](./BUILD_SUMMARY.md)** | Architecture & implementation |
-| **[IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md)** | What was built |
-| **[FILES_CREATED.md](./FILES_CREATED.md)** | File manifest |
+All detailed documentation lives in the [`docs/`](./docs/) folder:
 
-**Start with [START_HERE.md](./START_HERE.md)** - it has a navigation guide!
+| Document | Description |
+|---|---|
+| [docs/README.md](./docs/README.md) | Project overview and structure |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | System architecture, data flow, tech decisions |
+| [docs/GAME_ENGINE.md](./docs/GAME_ENGINE.md) | Game logic, chain reactions, scoring, elimination |
+| [docs/RENDERING.md](./docs/RENDERING.md) | Canvas rendering engine, orb visuals, explosions |
+| [docs/NETWORKING.md](./docs/NETWORKING.md) | Socket.io events, room system, mock socket |
+| [docs/COMPONENTS.md](./docs/COMPONENTS.md) | React components and their props |
+| [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | Complete function, hook, and event API |
+| [docs/SETUP_AND_DEPLOYMENT.md](./docs/SETUP_AND_DEPLOYMENT.md) | Installation, env vars, deployment |
+| [docs/CHANGELOG.md](./docs/CHANGELOG.md) | Version history and recent changes |
 
-## Architecture
+## Tech Stack
 
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16.1.6, React 19, TypeScript 5.7 |
+| Rendering | Canvas 2D API (custom `BoardRenderer`) |
+| State | Zustand 4 |
+| Networking | Socket.io 4 (client + server) |
+| Server | Express 4, Node.js |
+| Persistence | Redis (ioredis 5) with in-memory fallback |
+| Styling | Tailwind CSS 4, shadcn/ui |
+| Audio | Web Audio API (synthesized tones) |
+
+## Scripts
+
+```bash
+pnpm dev           # Next.js dev server (port 3000)
+pnpm dev:server    # Socket.io backend (port 3001)
+pnpm dev:both      # Run both concurrently
+pnpm build         # Production build
+pnpm start         # Start production server
+pnpm lint          # Run ESLint
 ```
-Frontend (Next.js 16 + React 19)
-    ↓
-Zustand Store (State Management)
-    ↓
-Socket.io Client
-    ↓
-Express Server + Socket.io
-    ↓
-Game Logic (Pure Functions)
-    ↓
-Redis (Optional Persistence)
-```
-
-## Key Technologies
-
-- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
-- **Backend**: Express.js, Socket.io, Node.js
-- **State**: Zustand
-- **Rendering**: HTML5 Canvas
-- **Audio**: Web Audio API
-- **Database**: Redis (optional)
-- **Storage**: ioredis
 
 ## Project Structure
 
 ```
 chain-reaction/
-├── app/                          # Next.js app directory
-│   ├── layout.tsx               # Root layout
-│   ├── page.tsx                 # Main page
-│   └── globals.css              # Global styles
-├── components/                   # React components
-│   ├── Game.tsx                 # Main orchestrator
-│   ├── Lobby.tsx                # Room creation
-│   ├── WaitingRoom.tsx          # Player queue
-│   ├── GameCanvas.tsx           # Board rendering
-│   ├── GameHUD.tsx              # Score/timer
-│   ├── GameOver.tsx             # Results
-│   └── ui/                      # shadcn/ui components
-├── hooks/                        # Custom React hooks
-│   ├── useSocket.ts             # Socket.io integration
-│   └── useGameLogic.ts          # Game hooks
-├── lib/                          # Utilities
-│   ├── types.ts                 # TypeScript interfaces
-│   ├── gameEngine.ts            # Game logic
-│   ├── store.ts                 # Zustand store
-│   ├── rendering.ts             # Canvas system
-│   ├── soundManager.ts          # Audio effects
-│   ├── constants.ts             # Configuration
-│   └── index.ts                 # Exports
-├── server/                       # Backend
-│   └── index.ts                 # Express + Socket.io
-├── public/                       # Static assets
-└── docs/                         # Documentation
+├── app/                    # Next.js app router (layout, page, globals.css)
+├── components/             # React components (Game, Lobby, WaitingRoom, GameCanvas, GameHUD, GameOver)
+├── hooks/                  # Custom hooks (useSocket, useGameLogic)
+├── lib/                    # Core libraries (gameEngine, rendering, store, soundManager, types, constants)
+├── server/                 # Express + Socket.io backend
+├── docs/                   # Full documentation
+└── public/                 # Static assets
 ```
-
-## Game Logic
-
-**Pure, shareable functions** - works on client and server:
-
-```typescript
-// Initialize board
-const board = initializeBoard();
-
-// Validate move
-const validation = validateMove(move, boardState, playerId);
-
-// Execute move
-const result = applyMove(boardState, move, playerColor);
-
-// Get next player
-const nextId = getNextTurn(currentId, playerIds);
-
-// Check if game over
-if (isGameOver(boardState)) {
-  const winner = getWinner(scores, players);
-}
-```
-
-## Real-time Synchronization
-
-```
-Player 1: Click orb
-    ↓
-Client validates move
-    ↓
-Send to server via Socket.io
-    ↓
-Server validates again
-    ↓
-Execute game logic
-    ↓
-Broadcast to both players
-    ↓
-Both UIs update automatically
-    ↓
-Smooth animations on canvas
-```
-
-## Development
-
-### Commands
-
-```bash
-pnpm dev              # Start frontend only
-pnpm run dev:server   # Start backend only
-pnpm run dev:both     # Start both (recommended)
-pnpm build            # Build for production
-pnpm start            # Run production build
-pnpm lint             # Check code quality
-```
-
-### Testing Multiplayer Locally
-
-```bash
-# Terminal 1
-pnpm run dev:both
-
-# Terminal 2 (different port)
-PORT=3001 pnpm dev
-
-# Open two browser windows
-# Window 1: http://localhost:3000
-# Window 2: http://localhost:3001
-```
-
-### Debug Commands
-
-```javascript
-// In browser console
-useGameStore.getState()        // Full game state
-useGameStore.getState().phase  // Current phase
-```
-
-## Performance
-
-- **Canvas FPS**: 60fps (decoupled from network)
-- **Move Latency**: 50-100ms typical
-- **Bundle Size**: ~50KB gzipped
-- **Memory**: ~5MB runtime
-- **Network**: 100-200 bytes per move
-
-## Deployment
-
-### Option 1: Vercel (Easiest)
-```bash
-vercel deploy
-```
-Then deploy server to Railway/Render and set `NEXT_PUBLIC_SOCKET_URL`
-
-### Option 2: Self-Hosted
-```bash
-pnpm build
-docker build -t chain-reaction .
-docker run -p 3000:3000 -p 3001:3001 chain-reaction
-```
-
-### Option 3: Vercel + External Server
-1. Deploy frontend to Vercel
-2. Deploy server to Railway/Render/Fly
-3. Set environment variable: `NEXT_PUBLIC_SOCKET_URL=https://your-server.com`
-
-See [SETUP.md](./SETUP.md) for detailed deployment guides.
-
-## Configuration
-
-Create `.env.local`:
-```env
-# Required
-NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
-
-# Optional (Redis for persistence)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# Server
-PORT=3001
-```
-
-See `.env.example` for all options.
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| "Socket not connected" | Make sure `pnpm run dev:server` is running |
-| "Port 3001 in use" | Kill process: `lsof -ti:3001 \| xargs kill -9` |
-| "Cannot find module" | Run `pnpm install` |
-| "Canvas not rendering" | Check browser console for errors |
-| "Move not syncing" | Check server logs and socket events |
-
-See [SETUP.md - Troubleshooting](./SETUP.md#troubleshooting) for more.
-
-## Extending the Game
-
-The codebase is designed for easy extension:
-
-### Add New Features
-1. **Power-ups** - Extend `applyMove()` in `gameEngine.ts`
-2. **More players** - Update room logic in `server/index.ts`
-3. **AI opponent** - Add game logic in `server/index.ts`
-4. **Leaderboard** - Add database integration
-5. **Custom themes** - Modify `constants.ts` colors
-6. **Mobile app** - Reuse logic with React Native
-
-See [BUILD_SUMMARY.md - Extensibility](./BUILD_SUMMARY.md#extensibility-points) for details.
-
-## Security
-
-- ✅ Server-side move validation (client can't cheat)
-- ✅ Player authentication with Socket.io
-- ✅ Game state isolation per room
-- ✅ CORS protection
-- ✅ Input sanitization for chat
-- ✅ Session management
-
-## Performance Tips
-
-1. **Use Redis** for multi-instance deployments
-2. **Enable gzip** in your reverse proxy
-3. **Use CDN** for static assets
-4. **Monitor memory** on long-running servers
-5. **Limit game size** with timeout cleanup
-
-## Browser Support
-
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
-
-Requires: Canvas, Web Audio API, WebSocket, ES2020
-
-## Statistics
-
-- **Total Code**: 8000+ lines
-- **Files**: 20+
-- **Components**: 6
-- **Documentation**: 8 files
-- **Type Safe**: 100%
-- **Production Ready**: Yes
 
 ## License
 
-MIT License - See LICENSE file for details
-
-## What Makes This Special
-
-✅ **Production Code** - Not a tutorial, real implementation
-✅ **Type Safe** - Full TypeScript coverage
-✅ **Well Architected** - Clean separation of concerns
-✅ **Fully Documented** - Multiple detailed guides
-✅ **Extensible** - Easy to add features
+MIT
 ✅ **Secure** - Server-side validation
 ✅ **Performant** - 60fps rendering
 ✅ **Real Multiplayer** - Actual game logic

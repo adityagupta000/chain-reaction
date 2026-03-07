@@ -308,7 +308,7 @@ io.on("connection", (socket) => {
 
     room.status = "playing";
     room.boardState = createBoardState(
-      room.host.id,
+      0,
       room.gridRows,
       room.gridCols,
     );
@@ -344,6 +344,14 @@ io.on("connection", (socket) => {
       return;
     }
     const player = room.players[playerIndex];
+
+    // Validate turn order
+    if (playerIndex !== boardState.currentPlayerIndex) {
+      socket.emit("game:invalid-move", {
+        reason: "It's not your turn",
+      });
+      return;
+    }
 
     // Validate move using new isValidMove signature
     const rows = boardState.grid.length;

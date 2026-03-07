@@ -36,8 +36,8 @@ export function GameCanvas({
 
   const [turnWarning, setTurnWarning] = useState(false);
   const [errorWarning, setErrorWarning] = useState(false);
-  const turnWarningTimer = useRef<ReturnType<typeof setTimeout>>();
-  const errorWarningTimer = useRef<ReturnType<typeof setTimeout>>();
+  const turnWarningTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const errorWarningTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const lastErrorRef = useRef<string>("");
 
   // Keep latest values in refs so click handler never goes stale

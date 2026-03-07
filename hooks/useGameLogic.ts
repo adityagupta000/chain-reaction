@@ -61,7 +61,7 @@ export function useGameTimer() {
   const boardState = useBoardState();
   const room = useRoom();
   const { submitMove } = useSocketEmit();
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout>(undefined);
 
   useEffect(() => {
     if (!boardState || !room || room.status !== 'playing') {
@@ -69,15 +69,23 @@ export function useGameTimer() {
       return;
     }
 
+    const currentPlayerIndex = boardState.currentPlayerIndex;
+    const currentPlayer = room.players?.[currentPlayerIndex];
+    if (!currentPlayer) return;
+
     // Auto-submit move if turn times out
     timeoutRef.current = setTimeout(() => {
       console.log('[Game] Turn timeout - auto-submitting move');
 
-      // Get a random valid move
+      const rows = boardState.grid.length;
+      const cols = boardState.grid[0]?.length || 0;
+
+      // Get a random valid move for the current player
       const validMoves: [number, number][] = [];
-      for (let r = 0; r < 6; r++) {
-        for (let c = 0; c < 6; c++) {
-          if (boardState.grid[r][c] !== null) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = boardState.grid[r][c];
+          if (cell.orbs === 0 || cell.owner === currentPlayerIndex) {
             validMoves.push([r, c]);
           }
         }
@@ -86,7 +94,7 @@ export function useGameTimer() {
       if (validMoves.length > 0) {
         const [row, col] = validMoves[Math.floor(Math.random() * validMoves.length)];
         submitMove(room.id, {
-          playerId: room.host.id,
+          playerId: currentPlayer.id,
           row,
           col,
           timestamp: Date.now(),
@@ -97,7 +105,7 @@ export function useGameTimer() {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [boardState?.turn, room, boardState, submitMove]);
+  }, [boardState?.currentPlayerIndex, room, boardState, submitMove]);
 }
 
 /**

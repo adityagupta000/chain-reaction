@@ -133,9 +133,12 @@ export const usePendingAnimation = () =>
 export const useGameHistory = () => useGameStore((state) => state.gameHistory);
 
 // Helper selector to determine if it's the current player's turn
-export const useIsMyTurn = (playerId?: string) => {
+export const useIsMyTurn = (playerId?: string, playerIndex?: number) => {
   const boardState = useGameStore((state) => state.boardState);
-  return boardState?.turn === playerId;
+  if (playerIndex !== undefined) {
+    return boardState?.currentPlayerIndex === playerIndex;
+  }
+  return false;
 };
 
 // Helper selector to get scores

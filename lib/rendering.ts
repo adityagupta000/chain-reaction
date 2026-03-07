@@ -333,6 +333,12 @@ export class BoardRenderer {
     this.gridAccentColor = colors.accent;
   }
 
+  /** Public method to push new grid + players to the renderer */
+  renderOnce(grid: Cell[][], players: Player[]): void {
+    this.players = players;
+    this.updateGrid(grid);
+  }
+
   private updateGrid(grid: Cell[][]): void {
     const prev = this.currentGrid;
     this.currentGrid = grid;

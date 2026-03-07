@@ -89,6 +89,7 @@ export class MockSocket {
       players: [],
     };
 
+    room.players = [room.host];
     this.currentRoom = room;
     this.rooms.set(room.id, room);
 
@@ -121,6 +122,7 @@ export class MockSocket {
     };
 
     room.guest = guest;
+    room.players.push(guest);
     room.boardState.scores[playerId] = 0;
     this.currentRoom = room;
 
@@ -173,6 +175,12 @@ export class MockSocket {
 
     const player = room.players[playerIndex];
 
+    // Validate turn order
+    if (playerIndex !== boardState.currentPlayerIndex) {
+      this.emit("game:invalid-move", { reason: "It's not your turn" });
+      return;
+    }
+
     // Apply move using new signature
     const result = applyMove(boardState, move, playerIndex, room.players);
     boardState.grid = result.newGrid;
@@ -190,15 +198,29 @@ export class MockSocket {
     boardState.turnNumber += 1;
     boardState.lastMoveAt = Date.now();
 
-    this.emit("game:moveReceived", {
+    // Check game over
+    const gameOver = isGameOver(boardState.grid, room.players);
+    const winner = gameOver
+      ? room.players.find(
+          (p) => p.hasMovedOnce && boardState.scores[p.id] > 0,
+        ) || null
+      : null;
+
+    if (gameOver) {
+      room.status = "finished";
+    }
+
+    this.emit("game:moveResult", {
       move,
       boardState,
       scores: boardState.scores,
       explosionSequence: result.explosionSequence,
+      eliminatedPlayers: [],
+      winner,
     });
 
-    // Simulate opponent move after a delay
-    if (room.guest) {
+    // Simulate opponent move after a delay (only if game not over)
+    if (!gameOver && room.guest) {
       this._simulateOpponentMoves();
     }
   }
@@ -264,24 +286,25 @@ export class MockSocket {
 
         if (isGameOver(boardState.grid, room.players)) {
           room.status = "finished";
-          this.emit("game:finished", {
-            outcome:
-              boardState.scores[this.currentPlayerId] >
-              boardState.scores[opponent.id]
-                ? "win"
-                : "lose",
-            winner:
-              boardState.scores[this.currentPlayerId] >
-              boardState.scores[opponent.id]
-                ? this.currentPlayerId
-                : opponent.id,
-          });
-        } else {
-          this.emit("game:moveReceived", {
+          const winnerPlayer = room.players.find(
+            (p) => p.hasMovedOnce && boardState.scores[p.id] > 0,
+          ) || null;
+          this.emit("game:moveResult", {
             move: randomMove,
             boardState,
             scores: boardState.scores,
             explosionSequence: result.explosionSequence,
+            eliminatedPlayers: [],
+            winner: winnerPlayer,
+          });
+        } else {
+          this.emit("game:moveResult", {
+            move: randomMove,
+            boardState,
+            scores: boardState.scores,
+            explosionSequence: result.explosionSequence,
+            eliminatedPlayers: [],
+            winner: null,
           });
           // Continue simulation
           this._simulateOpponentMoves();
