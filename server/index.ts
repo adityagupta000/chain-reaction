@@ -14,13 +14,13 @@ import type {
 } from "../lib/types";
 import {
   createBoardState,
-  validateMove,
+  isValidMove,
   applyMove,
-  getNextTurn,
-  getValidMoves,
+  getNextActivePlayer,
   isGameOver,
   getWinner,
   computeScores,
+  getEliminatedPlayers,
 } from "../lib/gameEngine";
 import { nanoid } from "nanoid";
 
@@ -149,6 +149,7 @@ io.on("connection", (socket) => {
         score: 0,
         isActive: true,
         socketId: socket.id,
+        hasMovedOnce: false,
       };
 
       const room: GameRoom = {
@@ -236,6 +237,7 @@ io.on("connection", (socket) => {
         score: 0,
         isActive: false,
         socketId: socket.id,
+        hasMovedOnce: false,
       };
 
       room.players.push(guest);
@@ -335,74 +337,78 @@ io.on("connection", (socket) => {
     const { move } = data;
     const boardState = room.boardState;
 
-    // Find the player who made the move
-    const player = room.players.find((p) => p.id === move.playerId);
-    if (!player) {
+    // Find the player who made the move and their index
+    const playerIndex = room.players.findIndex((p) => p.id === move.playerId);
+    if (playerIndex === -1) {
       socket.emit("error", { message: "Player not found" });
       return;
     }
+    const player = room.players[playerIndex];
 
-    // Validate move
-    const validation = validateMove(
-      move,
-      boardState,
-      boardState.turn,
-      player.color,
+    // Validate move using new isValidMove signature
+    const rows = boardState.grid.length;
+    const cols = boardState.grid[0]?.length || 0;
+    const isValid = isValidMove(
+      boardState.grid,
+      move.row,
+      move.col,
+      playerIndex,
+      rows,
+      cols,
     );
-    if (!validation.valid) {
+    if (!isValid) {
       socket.emit("game:invalid-move", {
-        reason: validation.reason || "Invalid move",
+        reason: "Invalid move - cannot place on opponent cell or out of bounds",
       });
       return;
     }
 
-    // Apply move
-    const result = applyMove(boardState, move, player.color);
+    // Apply move using new applyMove signature
+    const result = applyMove(boardState, move, playerIndex, room.players);
     boardState.grid = result.newGrid;
+    boardState.scores = result.scores;
 
-    // Compute scores based on orb counts
-    boardState.scores = computeScores(boardState.grid, room.players);
+    // Mark player as having moved
+    player.hasMovedOnce = true;
 
-    const allPlayerIds = room.players.map((p) => p.id);
-
-    // Skip eliminated players (no orbs after first round)
-    let nextTurn = getNextTurn(boardState.turn, allPlayerIds);
-    if (boardState.turnNumber >= allPlayerIds.length) {
-      let safety = 0;
-      while (
-        boardState.scores[nextTurn] === 0 &&
-        safety < allPlayerIds.length
-      ) {
-        nextTurn = getNextTurn(nextTurn, allPlayerIds);
-        safety++;
-      }
-    }
-    boardState.turn = nextTurn;
+    // Get next active player
+    boardState.currentPlayerIndex = getNextActivePlayer(
+      boardState.currentPlayerIndex,
+      room.players,
+      boardState.grid,
+    );
     boardState.turnNumber += 1;
     boardState.lastMoveAt = Date.now();
 
     // Check for game over
-    if (isGameOver(boardState)) {
+    if (isGameOver(boardState.grid, room.players)) {
       room.status = "finished";
-      const winner = getWinner(boardState.scores, room.players);
-
-      // Check for draw
-      const scoreValues = Object.values(boardState.scores);
-      const maxScore = Math.max(...scoreValues);
-      const playersWithMax = scoreValues.filter((s) => s === maxScore).length;
-      const outcome: GameOutcome = playersWithMax > 1 ? "draw" : "win";
+      const winner = getWinner(boardState.grid, room.players);
+      const eliminatedPlayers = getEliminatedPlayers(
+        boardState.grid,
+        room.players,
+      );
 
       await saveRoom(room);
-      io.to(data.roomId).emit("game:finished", {
-        outcome,
+      io.to(data.roomId).emit("game:moveResult", {
+        boardState,
+        explosionSequence: result.explosionSequence,
+        scores: boardState.scores,
+        eliminatedPlayers,
         winner,
       });
     } else {
+      const eliminatedPlayers = getEliminatedPlayers(
+        boardState.grid,
+        room.players,
+      );
       await saveRoom(room);
-      io.to(data.roomId).emit("game:moveReceived", {
-        move,
+      io.to(data.roomId).emit("game:moveResult", {
         boardState,
+        explosionSequence: result.explosionSequence,
         scores: boardState.scores,
+        eliminatedPlayers,
+        winner: null,
       });
     }
 
