@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { create } from 'zustand';
+import { create } from "zustand";
 import type {
   ClientGameState,
   GamePhase,
@@ -10,7 +10,7 @@ import type {
   GameMove,
   AnimationFrame,
   ChatMessage,
-} from './types';
+} from "./types";
 
 interface GameStore extends ClientGameState {
   // Phase management
@@ -34,6 +34,11 @@ interface GameStore extends ClientGameState {
   // Animation
   setPendingAnimation: (animation: AnimationFrame | null) => void;
 
+  // Game finish
+  setPendingGameFinish: (
+    data: { outcome: string; winner?: any } | null,
+  ) => void;
+
   // Error handling
   setError: (error: string | null) => void;
 
@@ -45,7 +50,7 @@ interface GameStore extends ClientGameState {
 }
 
 const initialState: ClientGameState = {
-  phase: 'lobby',
+  phase: "lobby",
   room: null,
   players: [],
   currentPlayer: null,
@@ -56,6 +61,7 @@ const initialState: ClientGameState = {
   selectedCell: null,
   isSubmittingMove: false,
   soundEnabled: true,
+  pendingGameFinish: null,
 };
 
 export const useGameStore = create<GameStore>((set) => ({
@@ -93,6 +99,8 @@ export const useGameStore = create<GameStore>((set) => ({
 
   setPendingAnimation: (animation) => set({ pendingAnimation: animation }),
 
+  setPendingGameFinish: (data) => set({ pendingGameFinish: data }),
+
   setError: (error) => set({ error }),
 
   toggleSound: () => {
@@ -109,14 +117,19 @@ export const useGameStore = create<GameStore>((set) => ({
 // ============================================================================
 
 export const useGamePhase = () => useGameStore((state) => state.phase);
-export const useCurrentPlayer = () => useGameStore((state) => state.currentPlayer);
+export const useCurrentPlayer = () =>
+  useGameStore((state) => state.currentPlayer);
 export const useRoom = () => useGameStore((state) => state.room);
 export const useBoardState = () => useGameStore((state) => state.boardState);
-export const useSelectedCell = () => useGameStore((state) => state.selectedCell);
-export const useIsSubmittingMove = () => useGameStore((state) => state.isSubmittingMove);
+export const useSelectedCell = () =>
+  useGameStore((state) => state.selectedCell);
+export const useIsSubmittingMove = () =>
+  useGameStore((state) => state.isSubmittingMove);
 export const useGameError = () => useGameStore((state) => state.error);
-export const useSoundEnabled = () => useGameStore((state) => state.soundEnabled);
-export const usePendingAnimation = () => useGameStore((state) => state.pendingAnimation);
+export const useSoundEnabled = () =>
+  useGameStore((state) => state.soundEnabled);
+export const usePendingAnimation = () =>
+  useGameStore((state) => state.pendingAnimation);
 export const useGameHistory = () => useGameStore((state) => state.gameHistory);
 
 // Helper selector to determine if it's the current player's turn
