@@ -28,17 +28,25 @@ export interface Player {
   score: number;
   isActive: boolean; // whose turn it is
   socketId?: string;
+  hasMovedOnce: boolean; // game cannot end until all players have moved
 }
 
-export interface Orb {
-  color: PlayerColor | "neutral";
-  mass: number;
+export interface Cell {
+  orbs: number; // how many orbs are stacked in this cell (0-N)
+  owner: number | null; // player index (0-based) or null if empty
+}
+
+export interface ExplosionStep {
+  row: number;
+  col: number;
+  playerIndex: number;
+  neighbors: [number, number][];
 }
 
 export interface BoardState {
-  grid: (Orb | null)[][];
+  grid: Cell[][]; // never null, empty cell = { orbs: 0, owner: null }
   scores: Record<string, number>;
-  turn: string; // player id
+  currentPlayerIndex: number; // index not string ID
   turnNumber: number;
   gameStartedAt: number;
   lastMoveAt: number;
@@ -72,8 +80,10 @@ export interface MoveValidationResult {
 
 export interface ExplosionResult {
   scores: Record<string, number>;
-  newGrid: (Orb | null)[][];
-  cellsAffected: Set<string>;
+  newGrid: Cell[][];
+  explosionSequence: ExplosionStep[];
+  eliminatedPlayers: number[];
+  winner: Player | null;
 }
 
 export interface AnimationFrame {
@@ -99,6 +109,7 @@ export interface ClientGameState {
   selectedCell: [number, number] | null;
   isSubmittingMove: boolean;
   soundEnabled: boolean;
+  pendingGameFinish: { outcome: string; winner?: any } | null;
 }
 
 export interface ChatMessage {
