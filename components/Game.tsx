@@ -13,6 +13,7 @@ import { WaitingRoom } from "./WaitingRoom";
 import { GameCanvas } from "./GameCanvas";
 import { GameHUD } from "./GameHUD";
 import { GameOver } from "./GameOver";
+import { AnimatedBackground } from "./AnimatedBackground";
 import type { PlayerColor } from "@/lib/types";
 
 export function Game() {
@@ -57,8 +58,11 @@ export function Game() {
   // Wait for hydration — show lobby even without playerId (it will be set during create/join)
   if (!mounted) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-white">Loading...</div>
+      <div className="min-h-screen motion-bg flex items-center justify-center">
+        <AnimatedBackground />
+        <div className="text-blue-600 text-xl font-bold tracking-widest animate-pulse relative z-10">
+          INITIALIZING...
+        </div>
       </div>
     );
   }
@@ -66,7 +70,9 @@ export function Game() {
   // Determine current player's color and turn
   const currentPlayer = room?.players?.find((p: any) => p.id === playerId);
   const playerColor: PlayerColor = currentPlayer?.color || "blue";
-  const isMyTurn = boardState?.turn === playerId;
+  const currentPlayerIndex =
+    room?.players?.findIndex((p: any) => p.id === playerId) ?? -1;
+  const isMyTurn = currentPlayerIndex === boardState?.currentPlayerIndex;
 
   // Render based on phase
   if (phase === "lobby") {
