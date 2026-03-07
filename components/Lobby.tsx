@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { AlertCircle } from "lucide-react";
+import { AnimatedBackground } from "./AnimatedBackground";
 import { AVAILABLE_COLORS, type PlayerColor } from "@/lib/types";
 
 export function Lobby() {
@@ -57,20 +58,22 @@ export function Lobby() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md bg-slate-800 border-slate-700">
+    <div className="min-h-screen motion-bg flex items-center justify-center p-4 relative overflow-hidden">
+      <AnimatedBackground />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(99,102,241,0.1),transparent_50%)] pointer-events-none"></div>
+      <Card className="w-full max-w-md bg-white border-2 border-blue-400 shadow-2xl shadow-blue-200 relative z-10">
         <div className="p-8">
-          <h1 className="text-4xl font-bold text-center mb-2 text-white">
-            Chain Reaction
+          <h1 className="text-5xl font-black text-center mb-2 bg-linear-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent drop-shadow-lg">
+            CHAIN REACTION
           </h1>
-          <p className="text-center text-slate-400 mb-8">
-            Tap to expand your orbs and create explosive chain reactions!
+          <p className="text-center text-gray-700 mb-8 font-bold tracking-wide">
+            TAP TO EXPAND • CREATE EXPLOSIONS • DOMINATE
           </p>
 
           {error && (
-            <div className="bg-red-900/50 border border-red-600 rounded-lg p-4 mb-6 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
-              <p className="text-red-200 text-sm">{error}</p>
+            <div className="bg-red-100 border border-red-400 rounded-lg p-4 mb-6 flex items-start gap-3 shadow-lg shadow-red-200">
+              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+              <p className="text-red-700 text-sm font-semibold">{error}</p>
             </div>
           )}
 
@@ -80,22 +83,21 @@ export function Lobby() {
                 placeholder="Enter your name"
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
-                className="bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                className="bg-blue-50 border-blue-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:shadow-lg focus:shadow-blue-200"
               />
 
               <Button
                 onClick={() => setMode("create")}
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold shadow-lg shadow-blue-400 hover:shadow-blue-500 transition-all"
               >
-                Create Room
+                CREATE ROOM
               </Button>
 
               <Button
                 onClick={() => setMode("join")}
-                variant="outline"
-                className="w-full border-slate-600 text-white hover:bg-slate-700"
+                className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold shadow-lg shadow-purple-400 hover:shadow-purple-500 transition-all"
               >
-                Join Room
+                JOIN ROOM
               </Button>
             </div>
           )}
@@ -106,7 +108,7 @@ export function Lobby() {
                 placeholder="Enter your name"
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
-                className="bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                className="bg-blue-50 border-blue-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:shadow-lg focus:shadow-blue-200"
                 disabled={isLoading}
               />
 
@@ -114,14 +116,14 @@ export function Lobby() {
                 placeholder="Room name"
                 value={roomNameInput}
                 onChange={(e) => setRoomNameInput(e.target.value)}
-                className="bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                className="bg-blue-50 border-blue-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:shadow-lg focus:shadow-blue-200"
                 disabled={isLoading}
               />
 
               {/* Player Count Selector */}
               <div>
-                <label className="text-sm text-slate-400 mb-2 block">
-                  Number of Players
+                <label className="text-sm text-gray-700 mb-2 block font-bold">
+                  PLAYERS
                 </label>
                 <div className="flex gap-2">
                   {[2, 3, 4, 5].map((count) => (
@@ -130,10 +132,10 @@ export function Lobby() {
                       type="button"
                       onClick={() => setMaxPlayers(count)}
                       disabled={isLoading}
-                      className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
                         maxPlayers === count
-                          ? "bg-blue-600 text-white ring-2 ring-blue-400"
-                          : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                          ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white ring-2 ring-blue-300 shadow-lg shadow-blue-400"
+                          : "bg-blue-50 text-gray-700 border border-blue-300 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-200"
                       }`}
                     >
                       {count}P
@@ -144,8 +146,8 @@ export function Lobby() {
 
               {/* Grid Size Selector */}
               <div>
-                <label className="text-sm text-slate-400 mb-2 block">
-                  Grid Size
+                <label className="text-sm text-gray-700 mb-2 block font-bold">
+                  GRID
                 </label>
                 <div className="flex gap-2 flex-wrap">
                   {[
@@ -163,10 +165,10 @@ export function Lobby() {
                         setGridCols(preset.c);
                       }}
                       disabled={isLoading}
-                      className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
                         gridRows === preset.r && gridCols === preset.c
-                          ? "bg-blue-600 text-white ring-2 ring-blue-400"
-                          : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                          ? "bg-linear-to-r from-blue-500 to-blue-600 text-white ring-2 ring-blue-300 shadow-lg shadow-blue-400"
+                          : "bg-blue-50 text-gray-700 border border-blue-300 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-200"
                       }`}
                     >
                       {preset.label}
@@ -185,19 +187,18 @@ export function Lobby() {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                className="w-full bg-linear-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold shadow-lg shadow-green-400 hover:shadow-green-500 transition-all disabled:opacity-50"
               >
-                {isLoading ? "Connecting..." : "Create & Wait"}
+                {isLoading ? "CONNECTING..." : "START GAME"}
               </Button>
 
               <Button
                 type="button"
                 onClick={() => setMode("menu")}
-                variant="ghost"
-                className="w-full text-slate-400"
+                className="w-full bg-gray-100 text-gray-700 border border-gray-300 hover:border-gray-500 hover:shadow-lg hover:shadow-gray-300 font-bold"
                 disabled={isLoading}
               >
-                Back
+                BACK
               </Button>
             </form>
           )}
@@ -208,7 +209,7 @@ export function Lobby() {
                 placeholder="Enter your name"
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
-                className="bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                className="bg-blue-50 border-blue-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:shadow-lg focus:shadow-blue-200"
                 disabled={isLoading}
               />
 
@@ -216,7 +217,7 @@ export function Lobby() {
                 placeholder="Room ID"
                 value={roomIdInput}
                 onChange={(e) => setRoomIdInput(e.target.value)}
-                className="bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                className="bg-blue-50 border-blue-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:shadow-lg focus:shadow-blue-200"
                 disabled={isLoading}
               />
 
@@ -230,19 +231,18 @@ export function Lobby() {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+                className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold shadow-lg shadow-purple-400 hover:shadow-purple-500 transition-all disabled:opacity-50"
               >
-                {isLoading ? "Connecting..." : "Join Room"}
+                {isLoading ? "CONNECTING..." : "JOIN ROOM"}
               </Button>
 
               <Button
                 type="button"
                 onClick={() => setMode("menu")}
-                variant="ghost"
-                className="w-full text-slate-400"
+                className="w-full bg-gray-100 text-gray-700 border border-gray-300 hover:border-gray-500 hover:shadow-lg hover:shadow-gray-300 font-bold"
                 disabled={isLoading}
               >
-                Back
+                BACK
               </Button>
             </form>
           )}
