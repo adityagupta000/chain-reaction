@@ -69,6 +69,41 @@ export function GameCanvas({
     }
   }, [gameError]);
 
+  // Handle delayed game finish (wait for explosions to complete)
+  useEffect(() => {
+    const pendingFinish = useGameStore.getState().pendingGameFinish;
+    if (!pendingFinish || !rendererRef.current) return;
+
+    // Check if explosions are still active
+    if (rendererRef.current.hasActiveExplosions()) {
+      // Still animating - check again soon
+      const timer = setTimeout(() => {
+        // This will be called repeatedly until explosions are done
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+
+    // Explosions are done - now transition to gameover
+    useGameStore.getState().setPhase("gameover");
+    useGameStore.getState().setPendingGameFinish(null);
+  }, []);
+
+  // Check pending finish status continuously while playing
+  useEffect(() => {
+    if (!rendererRef.current) return;
+
+    const checkFinish = () => {
+      const pendingFinish = useGameStore.getState().pendingGameFinish;
+      if (pendingFinish && !rendererRef.current?.hasActiveExplosions()) {
+        useGameStore.getState().setPhase("gameover");
+        useGameStore.getState().setPendingGameFinish(null);
+      }
+    };
+
+    const interval = setInterval(checkFinish, 50);
+    return () => clearInterval(interval);
+  }, []);
+
   // Initialize renderer ONCE (only re-create if grid size changes)
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -140,24 +175,22 @@ export function GameCanvas({
       rendererRef.current.setSelectedCell(null, null);
     }
 
-    rendererRef.current.renderOnce(boardState.grid);
-  }, [boardState, selectedCell]);
+    rendererRef.current.renderOnce(boardState.grid, room?.players || []);
+  }, [boardState, selectedCell, room?.players]);
 
   // Update grid color based on whose turn it is
   useEffect(() => {
     if (!rendererRef.current || !boardState) return;
 
-    // Find the current turn player
+    // Find the current turn player by index
     const currentRoom = room;
-    if (currentRoom?.players) {
-      const turnPlayer = currentRoom.players.find(
-        (p) => p.id === boardState.turn,
-      );
+    if (currentRoom?.players && boardState.currentPlayerIndex !== undefined) {
+      const turnPlayer = currentRoom.players[boardState.currentPlayerIndex];
       if (turnPlayer) {
         rendererRef.current.setGridColor(turnPlayer.color);
       }
     }
-  }, [boardState?.turn, room?.players]);
+  }, [boardState?.currentPlayerIndex, room?.players]);
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden">
