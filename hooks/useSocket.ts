@@ -129,17 +129,36 @@ export function useSocket() {
         });
 
         socket.on(
-          "game:moveReceived",
+          "game:moveResult",
           (data: {
-            move: GameMove;
             boardState: BoardState;
             scores: Record<string, number>;
+            explosionSequence: any[];
+            eliminatedPlayers: number[];
+            winner: any | null;
           }) => {
-            console.log("[Socket] Move received:", data.move);
+            console.log("[Socket] Move result received");
+
+            // Step 1: Store pending board state (don't apply yet)
             useGameStore.getState().setBoardState(data.boardState);
-            useGameStore.getState().addToHistory(data.move);
             useGameStore.getState().clearSelection();
             useGameStore.getState().setSubmittingMove(false);
+
+            // Step 2: If game is finished, set pending game finish data
+            if (data.winner) {
+              useGameStore.getState().setPendingGameFinish({
+                outcome: "win",
+                winner: data.winner,
+              });
+            }
+
+            // Step 3: Handle eliminations
+            if (data.eliminatedPlayers.length > 0) {
+              console.log(
+                "[Socket] Eliminated players:",
+                data.eliminatedPlayers,
+              );
+            }
           },
         );
 
@@ -148,14 +167,6 @@ export function useSocket() {
           useGameStore.getState().setSubmittingMove(false);
           useGameStore.getState().clearSelection();
         });
-
-        socket.on(
-          "game:finished",
-          (data: { outcome: string; winner?: any }) => {
-            console.log("[Socket] Game finished:", data.outcome);
-            useGameStore.getState().setPhase("gameover");
-          },
-        );
 
         socket.on("disconnect", () => {
           console.log("[Socket] Disconnected");
