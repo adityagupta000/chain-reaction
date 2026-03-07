@@ -36,12 +36,12 @@ export function Game() {
       const id = localStorage.getItem("playerId");
       if (id) {
         setPlayerId(id);
-        setMounted(true);
       }
     };
 
-    // Check immediately
+    // Check immediately and mark as mounted (even if no playerId yet - it will be set during create/join)
     syncPlayerId();
+    setMounted(true);
 
     // Poll for changes (covers case where socket assigns ID after mount)
     const interval = setInterval(syncPlayerId, 300);
