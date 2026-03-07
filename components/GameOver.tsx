@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRoom, useBoardState, useGameStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -115,18 +114,18 @@ function ScoreRow({
       }}
     >
       <div className="flex items-center gap-3">
-        <span className="text-slate-400 text-sm w-5">#{rank}</span>
+      <span className="text-slate-500 text-sm w-5">#{rank}</span>
         <div
           className="w-3 h-3 rounded-full"
           style={{ backgroundColor: hex }}
         />
         <span
-          className={`font-semibold ${isWinner ? "text-yellow-400" : "text-white"}`}
+          className={`font-semibold ${isWinner ? "text-yellow-600" : "text-gray-900"}`}
         >
           {name}
         </span>
       </div>
-      <span className="text-2xl font-bold text-white">{score}</span>
+      <span className="text-2xl font-bold text-gray-900">{score}</span>
     </div>
   );
 }
