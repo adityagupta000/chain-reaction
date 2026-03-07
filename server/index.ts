@@ -24,13 +24,31 @@ import {
 } from "../lib/gameEngine";
 import { nanoid } from "nanoid";
 
+const VALID_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "purple"];
+const MAX_NAME_LENGTH = 20;
+const MAX_ROOM_NAME_LENGTH = 30;
+const MAX_CHAT_LENGTH = 200;
+const MOVE_COOLDOWN_MS = 100; // minimum ms between moves per player
+
+function sanitize(str: string): string {
+  return str.replace(/[<>&"'/]/g, "").trim().slice(0, MAX_NAME_LENGTH);
+}
+
+function isValidColor(color: unknown): color is PlayerColor {
+  return typeof color === "string" && VALID_COLORS.includes(color as PlayerColor);
+}
+
 const app = express();
+app.disable("x-powered-by");
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
     origin: process.env.NODE_ENV === "production" ? false : "*",
     methods: ["GET", "POST"],
   },
+  pingInterval: 10000,
+  pingTimeout: 5000,
+  maxHttpBufferSize: 1e6, // 1MB max payload
 });
 
 // Initialize Redis with error handling
@@ -51,6 +69,7 @@ redis.on("error", () => {
 // In-memory fallback if Redis is unavailable
 const rooms = new Map<string, GameRoom>();
 const playerSockets = new Map<string, string>(); // playerId -> socketId
+const lastMoveTime = new Map<string, number>(); // playerId -> timestamp
 
 // ============================================================================
 // REDIS HELPERS
@@ -107,15 +126,24 @@ io.on("connection", (socket) => {
   console.log(`[Server] Player connected: ${socket.id}`);
 
   socket.on("player:join", async (data: { playerName: string }) => {
+    if (!data?.playerName || typeof data.playerName !== "string") {
+      socket.emit("error", { message: "Invalid player name" });
+      return;
+    }
+    const playerName = sanitize(data.playerName);
+    if (playerName.length === 0) {
+      socket.emit("error", { message: "Player name cannot be empty" });
+      return;
+    }
     const playerId = nanoid();
     playerSockets.set(playerId, socket.id);
     socket.data.playerId = playerId;
-    socket.data.playerName = data.playerName;
+    socket.data.playerName = playerName;
 
-    console.log(`[Server] Player joined: ${playerId} - ${data.playerName}`);
+    console.log(`[Server] Player joined: ${playerId} - ${playerName}`);
 
     // Send acknowledgment back to client
-    socket.emit("player:joined", { playerId, playerName: data.playerName });
+    socket.emit("player:joined", { playerId, playerName });
   });
 
   socket.on(
@@ -136,9 +164,15 @@ io.on("connection", (socket) => {
       }
 
       const maxPlayers = Math.min(5, Math.max(2, data.maxPlayers || 2));
-      const color: PlayerColor = data.color || "blue";
+      const color: PlayerColor = isValidColor(data.color) ? data.color : "blue";
       const gridRows = Math.min(15, Math.max(3, data.gridRows || 9));
       const gridCols = Math.min(15, Math.max(3, data.gridCols || 6));
+
+      const roomName = sanitize(data.roomName || "").slice(0, MAX_ROOM_NAME_LENGTH);
+      if (roomName.length === 0) {
+        socket.emit("error", { message: "Room name cannot be empty" });
+        return;
+      }
 
       const roomId = nanoid();
       const host: Player = {
@@ -154,11 +188,11 @@ io.on("connection", (socket) => {
 
       const room: GameRoom = {
         id: roomId,
-        name: data.roomName,
+        name: roomName,
         host,
         players: [host],
         status: "waiting",
-        boardState: createBoardState(playerId, gridRows, gridCols),
+        boardState: createBoardState(0, gridRows, gridCols),
         createdAt: Date.now(),
         maxPlayers,
         gridRows,
@@ -206,7 +240,7 @@ io.on("connection", (socket) => {
 
       // Check color availability
       const takenColors = getTakenColors(room);
-      let chosenColor: PlayerColor = data.color || "red";
+      let chosenColor: PlayerColor = isValidColor(data.color) ? data.color : "red";
 
       if (takenColors.includes(chosenColor)) {
         // Auto-pick first available color
@@ -229,9 +263,15 @@ io.on("connection", (socket) => {
         });
       }
 
+      const guestName = sanitize(data.playerName || "").slice(0, MAX_NAME_LENGTH);
+      if (guestName.length === 0) {
+        socket.emit("error", { message: "Player name cannot be empty" });
+        return;
+      }
+
       const guest: Player = {
         id: playerId,
-        name: data.playerName,
+        name: guestName,
         role: "guest",
         color: chosenColor,
         score: 0,
@@ -266,6 +306,8 @@ io.on("connection", (socket) => {
       const room = await getRoom(data.roomId);
       if (!room) return;
 
+      if (!isValidColor(data.color)) return;
+
       const takenColors = room.players
         .filter((p) => p.id !== playerId)
         .map((p) => p.color);
@@ -295,9 +337,16 @@ io.on("connection", (socket) => {
   );
 
   socket.on("game:start", async (data: { roomId: string }) => {
+    const playerId = socket.data.playerId;
     const room = await getRoom(data.roomId);
     if (!room || room.status !== "waiting") {
       socket.emit("error", { message: "Invalid room state" });
+      return;
+    }
+
+    // Only host can start the game
+    if (room.host.id !== playerId) {
+      socket.emit("error", { message: "Only the host can start the game" });
       return;
     }
 
@@ -328,6 +377,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("game:move", async (data: { roomId: string; move: GameMove }) => {
+    if (!data?.roomId || !data?.move) {
+      socket.emit("error", { message: "Invalid move data" });
+      return;
+    }
     const room = await getRoom(data.roomId);
     if (!room || room.status !== "playing") {
       socket.emit("error", { message: "Invalid room state" });
@@ -336,6 +389,15 @@ io.on("connection", (socket) => {
 
     const { move } = data;
     const boardState = room.boardState;
+
+    // Verify the move's playerId matches the socket's authenticated playerId
+    const socketPlayerId = socket.data.playerId;
+    if (!socketPlayerId || move.playerId !== socketPlayerId) {
+      socket.emit("game:invalid-move", {
+        reason: "Player identity mismatch",
+      });
+      return;
+    }
 
     // Find the player who made the move and their index
     const playerIndex = room.players.findIndex((p) => p.id === move.playerId);
@@ -352,6 +414,17 @@ io.on("connection", (socket) => {
       });
       return;
     }
+
+    // Rate limit: prevent spamming moves
+    const now = Date.now();
+    const lastMove = lastMoveTime.get(move.playerId) || 0;
+    if (now - lastMove < MOVE_COOLDOWN_MS) {
+      socket.emit("game:invalid-move", {
+        reason: "Too fast, slow down",
+      });
+      return;
+    }
+    lastMoveTime.set(move.playerId, now);
 
     // Validate move using new isValidMove signature
     const rows = boardState.grid.length;
@@ -430,24 +503,72 @@ io.on("connection", (socket) => {
     const playerName = socket.data.playerName;
 
     if (!playerId || !playerName) return;
+    if (!data?.message || typeof data.message !== "string") return;
+
+    const message = data.message.trim().slice(0, MAX_CHAT_LENGTH);
+    if (message.length === 0) return;
 
     const chatMessage: ChatMessage = {
       id: nanoid(),
       playerId,
       playerName,
-      message: data.message,
+      message,
       timestamp: Date.now(),
     };
 
     io.to(data.roomId).emit("chat:message", chatMessage);
-    console.log(
-      `[Server] Chat message in ${data.roomId}: ${playerName}: ${data.message}`,
-    );
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     const playerId = socket.data.playerId;
-    playerSockets.delete(playerId);
+    if (playerId) {
+      playerSockets.delete(playerId);
+      lastMoveTime.delete(playerId);
+
+      // Remove player from any rooms they were in
+      const allRoomIds = Array.from(rooms.keys());
+      for (const roomId of allRoomIds) {
+        const room = rooms.get(roomId);
+        if (!room) continue;
+        const playerIdx = room.players.findIndex((p) => p.id === playerId);
+        if (playerIdx === -1) continue;
+
+        room.players.splice(playerIdx, 1);
+
+        // If room is empty, delete it
+        if (room.players.length === 0) {
+          await deleteRoom(roomId);
+          console.log(`[Server] Room ${roomId} deleted (empty)`);
+          continue;
+        }
+
+        // If host left, promote the next player
+        if (room.host.id === playerId && room.players.length > 0) {
+          room.host = room.players[0];
+          room.host.role = "host";
+        }
+
+        // Update guest reference
+        room.guest = room.players.length >= 2 ? room.players[1] : undefined;
+
+        // If game was in progress and fewer than 2 players remain, end it
+        if (room.status === "playing" && room.players.length < 2) {
+          room.status = "finished";
+          const winner = room.players[0] || null;
+          io.to(roomId).emit("game:moveResult", {
+            boardState: room.boardState,
+            explosionSequence: [],
+            scores: room.boardState.scores,
+            eliminatedPlayers: [],
+            winner,
+          });
+        }
+
+        await saveRoom(room);
+        io.to(roomId).emit("room:updated", { room });
+        io.to(roomId).emit("player:left", { playerId });
+      }
+    }
     console.log(`[Server] Player disconnected: ${playerId}`);
   });
 });
@@ -461,7 +582,13 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/api/rooms", (req, res) => {
-  const roomList = Array.from(rooms.values());
+  const roomList = Array.from(rooms.values()).map((r) => ({
+    id: r.id,
+    name: r.name,
+    playerCount: r.players.length,
+    maxPlayers: r.maxPlayers,
+    status: r.status,
+  }));
   res.json(roomList);
 });
 
