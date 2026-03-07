@@ -1,21 +1,26 @@
 // Mock Socket.io implementation for offline development
-import { GameRoom, Player, BoardState, GameMove } from './types';
-import { createBoardState, applyMove, getNextTurn, isGameOver } from './gameEngine';
-import { nanoid } from 'nanoid';
+import { GameRoom, Player, BoardState, GameMove, Cell } from "./types";
+import {
+  createBoardState,
+  applyMove,
+  getNextActivePlayer,
+  isGameOver,
+} from "./gameEngine";
+import { nanoid } from "nanoid";
 
 export class MockSocket {
   private listeners: Map<string, Function[]> = new Map();
   public id: string;
   private rooms: Map<string, GameRoom> = new Map();
   private currentRoom: GameRoom | null = null;
-  private currentPlayerId: string = '';
+  private currentPlayerId: string = "";
   private simulationTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
     this.id = nanoid();
     // Simulate connection after a short delay
     setTimeout(() => {
-      this.emit('connect');
+      this.emit("connect");
     }, 500);
   }
 
@@ -48,7 +53,7 @@ export class MockSocket {
   }
 
   disconnect() {
-    this.emit('disconnect');
+    this.emit("disconnect");
     if (this.simulationTimeout) clearTimeout(this.simulationTimeout);
   }
 
@@ -56,7 +61,11 @@ export class MockSocket {
   // GAME LOGIC
   // ========================================================================
 
-  create_room(data: { roomName: string }, playerId: string, playerName: string) {
+  create_room(
+    data: { roomName: string },
+    playerId: string,
+    playerName: string,
+  ) {
     this.currentPlayerId = playerId;
     const room: GameRoom = {
       id: nanoid(),
@@ -64,34 +73,38 @@ export class MockSocket {
       host: {
         id: playerId,
         name: playerName,
-        role: 'host',
-        color: 'blue',
+        role: "host",
+        color: "blue",
         score: 0,
         isActive: true,
         socketId: this.id,
+        hasMovedOnce: false,
       },
-      status: 'waiting',
-      boardState: createBoardState(playerId),
+      status: "waiting",
+      boardState: createBoardState(0),
       createdAt: Date.now(),
       maxPlayers: 2,
+      gridRows: 9,
+      gridCols: 6,
+      players: [],
     };
 
     this.currentRoom = room;
     this.rooms.set(room.id, room);
 
-    this.emit('room:created', { room });
-    this.emit('room:updated', { room });
+    this.emit("room:created", { room });
+    this.emit("room:updated", { room });
   }
 
   join_room(data: { roomId: string }, playerId: string, playerName: string) {
     const room = this.rooms.get(data.roomId);
     if (!room) {
-      this.emit('error', { message: 'Room not found' });
+      this.emit("error", { message: "Room not found" });
       return;
     }
 
     if (room.guest) {
-      this.emit('error', { message: 'Room is full' });
+      this.emit("error", { message: "Room is full" });
       return;
     }
 
@@ -99,37 +112,44 @@ export class MockSocket {
     const guest: Player = {
       id: playerId,
       name: playerName,
-      role: 'guest',
-      color: 'red',
+      role: "guest",
+      color: "red",
       score: 0,
       isActive: false,
       socketId: this.id,
+      hasMovedOnce: false,
     };
 
     room.guest = guest;
     room.boardState.scores[playerId] = 0;
     this.currentRoom = room;
 
-    this.emit('room:updated', { room });
+    this.emit("room:updated", { room });
   }
 
   start_game() {
     if (!this.currentRoom) {
-      this.emit('error', { message: 'No room' });
+      this.emit("error", { message: "No room" });
       return;
     }
 
     const room = this.currentRoom;
-    if (room.status !== 'waiting' || !room.guest) {
-      this.emit('error', { message: 'Cannot start game' });
+    if (room.status !== "waiting" || !room.guest) {
+      this.emit("error", { message: "Cannot start game" });
       return;
     }
 
-    room.status = 'playing';
-    room.boardState = createBoardState(room.host.id);
+    room.status = "playing";
+    room.players = [room.host, room.guest];
+    room.boardState = createBoardState(
+      0,
+      room.gridRows || 9,
+      room.gridCols || 6,
+    );
+    room.boardState.scores[room.host.id] = 0;
     room.boardState.scores[room.guest.id] = 0;
 
-    this.emit('game:started', { boardState: room.boardState });
+    this.emit("game:started", { boardState: room.boardState });
 
     // Simulate opponent moves for demo
     this._simulateOpponentMoves();
@@ -137,34 +157,44 @@ export class MockSocket {
 
   submit_move(move: GameMove) {
     if (!this.currentRoom) {
-      this.emit('error', { message: 'No room' });
+      this.emit("error", { message: "No room" });
       return;
     }
 
     const room = this.currentRoom;
     const boardState = room.boardState;
 
-    const player = room.host.id === move.playerId ? room.host : room.guest;
-    if (!player) {
-      this.emit('game:invalid-move', { reason: 'Player not found' });
+    // Find playerIndex
+    const playerIndex = room.players.findIndex((p) => p.id === move.playerId);
+    if (playerIndex === -1) {
+      this.emit("game:invalid-move", { reason: "Player not found" });
       return;
     }
 
-    // Apply move
-    const result = applyMove(boardState, move, player.color);
+    const player = room.players[playerIndex];
+
+    // Apply move using new signature
+    const result = applyMove(boardState, move, playerIndex, room.players);
     boardState.grid = result.newGrid;
     boardState.scores = result.scores;
-    boardState.turn = getNextTurn(
-      boardState.turn,
-      room.guest ? [room.host.id, room.guest.id] : [room.host.id]
+
+    // Mark player as having moved
+    player.hasMovedOnce = true;
+
+    // Get next active player
+    boardState.currentPlayerIndex = getNextActivePlayer(
+      boardState.currentPlayerIndex,
+      room.players,
+      boardState.grid,
     );
     boardState.turnNumber += 1;
     boardState.lastMoveAt = Date.now();
 
-    this.emit('game:moveReceived', {
+    this.emit("game:moveReceived", {
       move,
       boardState,
       scores: boardState.scores,
+      explosionSequence: result.explosionSequence,
     });
 
     // Simulate opponent move after a delay
@@ -174,7 +204,7 @@ export class MockSocket {
   }
 
   private _simulateOpponentMoves() {
-    if (!this.currentRoom || this.currentRoom.status !== 'playing') return;
+    if (!this.currentRoom || this.currentRoom.status !== "playing") return;
 
     if (this.simulationTimeout) clearTimeout(this.simulationTimeout);
 
@@ -183,44 +213,75 @@ export class MockSocket {
 
       const room = this.currentRoom;
       const boardState = room.boardState;
-      const opponent = room.host.id === this.currentPlayerId ? room.guest : room.host;
+      const opponentIndex =
+        room.players.length > 1 && room.players[0].id === this.currentPlayerId
+          ? 1
+          : 0;
+      const opponent = room.players[opponentIndex];
 
-      if (!opponent || boardState.turn !== opponent.id) return;
+      if (!opponent || boardState.currentPlayerIndex !== opponentIndex) return;
 
-      // Make a random valid move
+      // Make a random valid move (empty cell or own cell)
       const validMoves: GameMove[] = [];
       for (let row = 0; row < boardState.grid.length; row++) {
         for (let col = 0; col < boardState.grid[row].length; col++) {
-          const orb = boardState.grid[row][col];
-          if (orb && orb.color === opponent.color) {
-            validMoves.push({ playerId: opponent.id, row, col });
+          const cell = boardState.grid[row][col];
+          // Can place on empty cell or own cell
+          if (cell.orbs === 0 || cell.owner === opponentIndex) {
+            validMoves.push({
+              playerId: opponent.id,
+              row,
+              col,
+              timestamp: Date.now(),
+            });
           }
         }
       }
 
       if (validMoves.length > 0) {
-        const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
-        const result = applyMove(boardState, randomMove, opponent.color);
+        const randomMove =
+          validMoves[Math.floor(Math.random() * validMoves.length)];
+        const result = applyMove(
+          boardState,
+          randomMove,
+          opponentIndex,
+          room.players,
+        );
         boardState.grid = result.newGrid;
         boardState.scores = result.scores;
-        boardState.turn = getNextTurn(
-          boardState.turn,
-          room.guest ? [room.host.id, room.guest.id] : [room.host.id]
+
+        // Mark opponent as having moved
+        opponent.hasMovedOnce = true;
+
+        // Get next active player
+        boardState.currentPlayerIndex = getNextActivePlayer(
+          boardState.currentPlayerIndex,
+          room.players,
+          boardState.grid,
         );
         boardState.turnNumber += 1;
         boardState.lastMoveAt = Date.now();
 
-        if (isGameOver(boardState)) {
-          room.status = 'finished';
-          this.emit('game:finished', {
-            outcome: boardState.scores[this.currentPlayerId] > boardState.scores[opponent.id] ? 'win' : 'lose',
-            winner: boardState.scores[this.currentPlayerId] > boardState.scores[opponent.id] ? this.currentPlayerId : opponent.id,
+        if (isGameOver(boardState.grid, room.players)) {
+          room.status = "finished";
+          this.emit("game:finished", {
+            outcome:
+              boardState.scores[this.currentPlayerId] >
+              boardState.scores[opponent.id]
+                ? "win"
+                : "lose",
+            winner:
+              boardState.scores[this.currentPlayerId] >
+              boardState.scores[opponent.id]
+                ? this.currentPlayerId
+                : opponent.id,
           });
         } else {
-          this.emit('game:moveReceived', {
+          this.emit("game:moveReceived", {
             move: randomMove,
             boardState,
             scores: boardState.scores,
+            explosionSequence: result.explosionSequence,
           });
           // Continue simulation
           this._simulateOpponentMoves();
