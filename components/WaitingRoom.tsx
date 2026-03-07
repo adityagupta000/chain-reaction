@@ -160,7 +160,7 @@ export function WaitingRoom() {
           )}
 
           {!isHost && (
-            <div className="bg-blue-900/50 border border-blue-600 rounded-lg p-4 text-center text-blue-200 mb-4">
+            <div className="bg-blue-50 border border-blue-300 rounded-lg p-4 text-center text-blue-700 mb-4 font-semibold">
               Waiting for host to start the game...
             </div>
           )}
@@ -196,7 +196,7 @@ function PlayerCard({
         style={{ backgroundColor: hex }}
       />
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-white truncate">
+        <p className="font-semibold text-gray-900 truncate">
           {player.name}
           {isCurrentPlayer && (
             <span className="text-xs text-slate-400 ml-2">(You)</span>
