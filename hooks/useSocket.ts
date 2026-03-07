@@ -7,6 +7,7 @@ import type { GameMove, GameRoom, BoardState, PlayerColor } from "@/lib/types";
 let globalSocket: any = null;
 let connectionAttempts = 0;
 let playerJoinedPromise: ((value: void) => void) | null = null;
+let playerJoinedTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 export function useSocket() {
   const socketRef = useRef<any>(null);
@@ -26,10 +27,11 @@ export function useSocket() {
           process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001",
           {
             reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            reconnectionAttempts: 3,
-            transports: ["websocket", "polling"],
+            reconnectionDelay: 500,
+            reconnectionDelayMax: 3000,
+            reconnectionAttempts: 5,
+            transports: ["websocket"],
+            upgrade: false,
           },
         );
 
@@ -57,6 +59,10 @@ export function useSocket() {
               localStorage.setItem("playerId", data.playerId);
             }
             if (playerJoinedPromise) {
+              if (playerJoinedTimeoutId) {
+                clearTimeout(playerJoinedTimeoutId);
+                playerJoinedTimeoutId = null;
+              }
               playerJoinedPromise();
               playerJoinedPromise = null;
             }
@@ -246,27 +252,16 @@ export function useSocketEmit() {
             globalSocket.emit("player:join", { playerName });
 
             // Fallback timeout in case acknowledgment doesn't arrive
-            const timeoutId = setTimeout(() => {
+            playerJoinedTimeoutId = setTimeout(() => {
               if (playerJoinedPromise === resolve) {
                 console.warn(
-                  "[Socket] Player join acknowledgment timeout after 1s, but proceeding (room join still works)",
+                  "[Socket] Player join acknowledgment timeout after 1s, but proceeding",
                 );
                 playerJoinedPromise = null;
+                playerJoinedTimeoutId = null;
                 resolve();
               }
             }, 1000);
-
-            // Also add a listener in case it comes through
-            if (typeof globalSocket.once === "function") {
-              globalSocket.once("player:joined", () => {
-                clearTimeout(timeoutId);
-                if (playerJoinedPromise === resolve) {
-                  console.log("[Socket] player:joined received!");
-                  playerJoinedPromise = null;
-                  resolve();
-                }
-              });
-            }
           } else if (attempts < maxAttempts) {
             console.log(
               `[Socket] Waiting for connection... (${attempts}/${maxAttempts})`,
