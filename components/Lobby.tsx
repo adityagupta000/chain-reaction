@@ -18,7 +18,7 @@ export function Lobby() {
   const [mode, setMode] = useState<"menu" | "create" | "join">("menu");
   const [isLoading, setIsLoading] = useState(false);
   const [maxPlayers, setMaxPlayers] = useState(2);
-  const [selectedColor, setSelectedColor] = useState<PlayerColor>("blue");
+  const [selectedColor, setSelectedColor] = useState<PlayerColor | null>(null);
   const [gridRows, setGridRows] = useState(9);
   const [gridCols, setGridCols] = useState(6);
   const error = useGameError();
@@ -29,7 +29,7 @@ export function Lobby() {
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!playerName.trim() || !roomNameInput.trim()) return;
+    if (!playerName.trim() || !roomNameInput.trim() || !selectedColor) return;
 
     try {
       setIsLoading(true);
@@ -44,7 +44,7 @@ export function Lobby() {
 
   const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!playerName.trim() || !roomIdInput.trim()) return;
+    if (!playerName.trim() || !roomIdInput.trim() || !selectedColor) return;
 
     try {
       setIsLoading(true);
@@ -258,14 +258,14 @@ function ColorPicker({
   disabled,
   takenColors = [],
 }: {
-  selected: PlayerColor;
+  selected: PlayerColor | null;
   onChange: (color: PlayerColor) => void;
   disabled?: boolean;
   takenColors?: PlayerColor[];
 }) {
   return (
     <div>
-      <label className="text-sm text-slate-400 mb-2 block">
+      <label className="text-sm text-gray-700 mb-2 block font-bold">
         Choose Your Color
       </label>
       <div className="flex gap-2">
