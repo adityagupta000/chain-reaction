@@ -12,7 +12,10 @@ export function GameHUD({ playerId }: GameHUDProps) {
   const boardState = useBoardState();
 
   const players = room?.players || [];
-  const currentTurnPlayer = players.find((p) => p.id === boardState?.turn);
+  const currentTurnPlayer =
+    boardState?.currentPlayerIndex !== undefined
+      ? players[boardState.currentPlayerIndex]
+      : undefined;
   const scores = boardState?.scores || {};
 
   if (!room) return null;
@@ -22,12 +25,12 @@ export function GameHUD({ playerId }: GameHUDProps) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         {/* Players with scores */}
         <div className="flex items-center gap-3 flex-wrap">
-          {players.map((player) => {
+          {players.map((player, playerIndex) => {
             const colorInfo = AVAILABLE_COLORS.find(
               (c) => c.value === player.color,
             );
             const hex = colorInfo?.hex || "#9CA3AF";
-            const isActive = boardState?.turn === player.id;
+            const isActive = boardState?.currentPlayerIndex === playerIndex;
             const isMe = player.id === playerId;
             return (
               <div
