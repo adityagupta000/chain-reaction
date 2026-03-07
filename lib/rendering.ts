@@ -15,13 +15,13 @@ const PLAYER_HEX: string[] = [
   "#FF8844", // player 5: orange
 ];
 
-// Color hex codes by player color name (kept for legacy grid coloring)
-const ORB_HEX: Record<string, string> = {
-  red: "#FF0000",
-  green: "#00FF00",
-  blue: "#0088FF",
-  yellow: "#FFFF00",
-  purple: "#FF00FF",
+// Color hex codes by player color name
+const COLOR_NAME_TO_HEX: Record<string, string> = {
+  red: "#FF4444",
+  blue: "#4488FF",
+  green: "#44FF88",
+  yellow: "#FFD700",
+  purple: "#CC44FF",
 };
 
 function parseHex(hex: string): [number, number, number] {
@@ -321,7 +321,7 @@ export class BoardRenderer {
     // Try to find the color in the map
     let colors = gridColorMap[normalizedColor];
 
-    // If not found, use default gray
+    // Fallback for any unrecognized color
     if (!colors) {
       colors = {
         main: "#1a1a1a",
@@ -331,6 +331,15 @@ export class BoardRenderer {
 
     this.gridColor = colors.main;
     this.gridAccentColor = colors.accent;
+  }
+
+  /** Resolve a player owner index to their actual chosen hex color */
+  private getPlayerHex(ownerIndex: number): string {
+    const player = this.players[ownerIndex];
+    if (player?.color) {
+      return COLOR_NAME_TO_HEX[player.color] || PLAYER_HEX[ownerIndex] || "#888888";
+    }
+    return PLAYER_HEX[ownerIndex] || "#888888";
   }
 
   /** Public method to push new grid + players to the renderer */
@@ -400,7 +409,7 @@ export class BoardRenderer {
           // Cell exploded (became empty after having orbs)
           const color =
             oldCell.owner !== null
-              ? PLAYER_HEX[oldCell.owner] || "#888"
+              ? this.getPlayerHex(oldCell.owner)
               : "#888";
           exploded.push({
             r,
@@ -413,7 +422,7 @@ export class BoardRenderer {
           if (newCell.orbs > oldOrbs) {
             const color =
               newCell.owner !== null
-                ? PLAYER_HEX[newCell.owner] || "#888"
+                ? this.getPlayerHex(newCell.owner)
                 : "#888";
             gained.push({
               r,
@@ -815,7 +824,7 @@ export class BoardRenderer {
 
         // Cell ownership tint background (subtle, under orbs)
         if (cell && cell.owner !== null) {
-          const ownerColor = PLAYER_HEX[cell.owner] || "#888888";
+          const ownerColor = this.getPlayerHex(cell.owner);
           ctx.save();
           ctx.globalAlpha = 0.08;
           ctx.fillStyle = ownerColor;
@@ -847,7 +856,7 @@ export class BoardRenderer {
           const critMass = getCriticalMass(r, c, this.rows, this.cols);
           if (cell.orbs >= critMass) {
             const colorHex =
-              cell.owner !== null ? PLAYER_HEX[cell.owner] || "#888" : "#888";
+              cell.owner !== null ? this.getPlayerHex(cell.owner) : "#888";
             const pulseAlpha = 0.15 + 0.15 * Math.sin(this.globalTime * 0.012);
             ctx.save();
             ctx.globalAlpha = pulseAlpha;
@@ -913,7 +922,7 @@ export class BoardRenderer {
         ctx.fillStyle = `rgba(255,68,68,${pulseAlpha})`;
       } else if (cell.owner !== null) {
         // Player color at 40% opacity
-        const ownerColor = PLAYER_HEX[cell.owner] || "#888888";
+        const ownerColor = this.getPlayerHex(cell.owner);
         ctx.fillStyle = ownerColor + "66";
       } else {
         // Empty cell: faint white
@@ -937,7 +946,7 @@ export class BoardRenderer {
     const cx = cellX + cs / 2;
     const cy = cellY + cs / 2;
     const color =
-      cell.owner !== null ? PLAYER_HEX[cell.owner] || "#888888" : "#888888";
+      cell.owner !== null ? this.getPlayerHex(cell.owner) : "#888888";
     const orbCount = Math.min(cell.orbs, 4);
     const radius = this.getOrbRadius(orbCount, cs);
 
