@@ -1,18 +1,27 @@
-import { Orb, ScreenShakeState } from "./types";
+import { Cell, Player, ScreenShakeState, ExplosionStep } from "./types";
 import { getCriticalMass } from "./gameEngine";
 import { getSoundManager } from "./soundManager";
 
 // ============================================================================
-// COLOR MAP
+// COLOR MAP (Maps player index to hex colors)
 // ============================================================================
 
+const PLAYER_HEX: string[] = [
+  "#FF4444", // player 0: red
+  "#4488FF", // player 1: blue
+  "#44FF88", // player 2: green
+  "#FFD700", // player 3: yellow
+  "#CC44FF", // player 4: purple
+  "#FF8844", // player 5: orange
+];
+
+// Color hex codes by player color name (kept for legacy grid coloring)
 const ORB_HEX: Record<string, string> = {
   red: "#FF0000",
   green: "#00FF00",
   blue: "#0088FF",
   yellow: "#FFFF00",
   purple: "#FF00FF",
-  neutral: "#888888",
 };
 
 function parseHex(hex: string): [number, number, number] {
@@ -21,6 +30,26 @@ function parseHex(hex: string): [number, number, number] {
     parseInt(hex.slice(3, 5), 16),
     parseInt(hex.slice(5, 7), 16),
   ];
+}
+
+// Lighten a hex color by a percentage (toward white)
+function lighten(hex: string, percent: number): string {
+  const [r, g, b] = parseHex(hex);
+  const amt = Math.floor((255 - Math.max(r, g, b)) * (percent / 100));
+  const nr = Math.min(255, r + amt);
+  const ng = Math.min(255, g + amt);
+  const nb = Math.min(255, b + amt);
+  return `rgb(${nr},${ng},${nb})`;
+}
+
+// Darken a hex color by a percentage (toward black)
+function darken(hex: string, percent: number): string {
+  const [r, g, b] = parseHex(hex);
+  const amt = Math.floor(Math.max(r, g, b) * (percent / 100));
+  const nr = Math.max(0, r - amt);
+  const ng = Math.max(0, g - amt);
+  const nb = Math.max(0, b - amt);
+  return `rgb(${nr},${ng},${nb})`;
 }
 
 // ============================================================================
@@ -54,9 +83,12 @@ function clamp01(t: number): number {
 // ============================================================================
 
 interface CellAnimState {
-  angle: number; // spin angle for orb self-rotation
-  angularVelocity: number;
-  targetVelocity: number;
+  angle: number; // orbit angle in radians
+  angularVelocity: number; // current rotation speed rad/sec
+  targetVelocity: number; // lerp target based on remaining orbs
+  pulsePhase: number; // idle pulse phase offset (radians)
+  pulsePeriod: number; // 2.0s normal, 0.6s danger (corner with 1 orb)
+  pulseScale: number; // computed each frame from sine
   // Per-orb spawn pop
   orbScales: number[];
   orbSpawnTimers: number[];
@@ -90,7 +122,8 @@ interface ExplosionEntry {
   row: number;
   col: number;
   color: string;
-  sourceOrb: Orb; // snapshot of cell before explosion
+  playerIndex: number;
+  sourceOrbCount: number; // number of orbs that exploded
   neighbors: [number, number][];
   flights: OrbFlight[];
   chainIndex: number;
@@ -162,7 +195,8 @@ export class BoardRenderer {
   private globalTime: number = 0;
 
   private cellAnims: CellAnimState[][] = [];
-  private currentGrid: (Orb | null)[][] | null = null;
+  private currentGrid: Cell[][] | null = null;
+  private players: Player[] = [];
 
   // Explosion queue
   private explosionQueue: ExplosionEntry[] = [];
@@ -220,8 +254,11 @@ export class BoardRenderer {
   private newCellAnim(): CellAnimState {
     return {
       angle: Math.random() * Math.PI * 2,
-      angularVelocity: 0.3,
-      targetVelocity: 0.3,
+      angularVelocity: 0,
+      targetVelocity: 0,
+      pulsePhase: Math.random() * Math.PI * 2,
+      pulsePeriod: 2.0, // normal idle pulse
+      pulseScale: 1.0,
       orbScales: [],
       orbSpawnTimers: [],
       landingBounceTime: -1,
@@ -268,52 +305,77 @@ export class BoardRenderer {
    * Set grid color based on current player's turn color
    */
   setGridColor(playerColor: string): void {
-    // Map player colors to tinted grid colors
+    // Map player colors to tinted grid colors based on actual orb hex colors
+    // Grid should be a darker, more saturated version of the player's orb color
     const gridColorMap: Record<string, { main: string; accent: string }> = {
-      blue: { main: "#0a3d5c", accent: "#051f2e" },
-      red: { main: "#5c0a0a", accent: "#2e0505" },
-      green: { main: "#0a5c0a", accent: "#052e05" },
-      yellow: { main: "#5c5c0a", accent: "#2e2e05" },
-      purple: { main: "#3d0a5c", accent: "#1f052e" },
+      red: { main: "#4d2222", accent: "#2a1111" }, // darker red from #FF4444
+      blue: { main: "#224d7d", accent: "#112a4d" }, // darker blue from #4488FF
+      green: { main: "#224d22", accent: "#112a11" }, // darker green from #44FF88
+      yellow: { main: "#7d7d22", accent: "#4d4d11" }, // darker yellow from #FFD700
+      purple: { main: "#4d224d", accent: "#2a112a" }, // darker purple from #CC44FF
     };
 
-    const colors = gridColorMap[playerColor] || {
-      main: "#1a1a1a",
-      accent: "#0d0d0d",
-    };
+    // Normalize the color string - convert to lowercase and trim whitespace
+    const normalizedColor = (playerColor || "").trim().toLowerCase();
+
+    // Try to find the color in the map
+    let colors = gridColorMap[normalizedColor];
+
+    // If not found, use default gray
+    if (!colors) {
+      colors = {
+        main: "#1a1a1a",
+        accent: "#0d0d0d",
+      };
+    }
+
     this.gridColor = colors.main;
     this.gridAccentColor = colors.accent;
   }
 
-  // ── PUBLIC API ──────────────────────────────────────────
-
-  render(grid: (Orb | null)[][]): void {
-    this.updateGrid(grid);
-  }
-
-  renderOnce(grid: (Orb | null)[][]): void {
-    this.updateGrid(grid);
-  }
-
-  private updateGrid(grid: (Orb | null)[][]): void {
+  private updateGrid(grid: Cell[][]): void {
     const prev = this.currentGrid;
     this.currentGrid = grid;
-    if (!prev) return;
+
+    // First render - initialize all cells with animation states
+    if (!prev) {
+      for (let r = 0; r < this.rows; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          const cell = grid[r]?.[c];
+          if (cell && cell.orbs > 0) {
+            const ca = this.cellAnims[r]?.[c];
+            if (ca) {
+              // Initialize spawn scales for initial orbs
+              while (ca.orbScales.length < cell.orbs) {
+                ca.orbScales.push(1); // Start at full scale for initial render
+                ca.orbSpawnTimers.push(0);
+              }
+              ca.orbScales.length = cell.orbs;
+              ca.orbSpawnTimers.length = cell.orbs;
+            }
+          }
+        }
+      }
+      return;
+    }
+
     this.detectChanges(prev, grid);
   }
 
   // ── CHANGE DETECTION ────────────────────────────────────
 
-  private detectChanges(
-    oldGrid: (Orb | null)[][],
-    newGrid: (Orb | null)[][],
-  ): void {
-    const exploded: { r: number; c: number; color: string; orb: Orb }[] = [];
+  private detectChanges(oldGrid: Cell[][], newGrid: Cell[][]): void {
+    const exploded: {
+      r: number;
+      c: number;
+      color: string;
+      orbCount: number;
+    }[] = [];
     const gained: {
       r: number;
       c: number;
-      oldMass: number;
-      newMass: number;
+      oldOrbs: number;
+      newOrbs: number;
       color: string;
     }[] = [];
 
@@ -322,29 +384,43 @@ export class BoardRenderer {
         const oldCell = oldGrid[r]?.[c];
         const newCell = newGrid[r]?.[c];
 
-        if (oldCell && !newCell) {
-          // Cell emptied — explosion source
+        if (
+          oldCell &&
+          oldCell.orbs > 0 &&
+          newCell &&
+          newCell.orbs === 0 &&
+          newCell.owner === null
+        ) {
+          // Cell exploded (became empty after having orbs)
+          const color =
+            oldCell.owner !== null
+              ? PLAYER_HEX[oldCell.owner] || "#888"
+              : "#888";
           exploded.push({
             r,
             c,
-            color: ORB_HEX[oldCell.color] || "#888",
-            orb: { ...oldCell },
+            color,
+            orbCount: oldCell.orbs,
           });
         } else if (newCell) {
-          const oldMass = oldCell ? oldCell.mass : 0;
-          if (newCell.mass > oldMass) {
+          const oldOrbs = oldCell ? oldCell.orbs : 0;
+          if (newCell.orbs > oldOrbs) {
+            const color =
+              newCell.owner !== null
+                ? PLAYER_HEX[newCell.owner] || "#888"
+                : "#888";
             gained.push({
               r,
               c,
-              oldMass,
-              newMass: newCell.mass,
-              color: ORB_HEX[newCell.color] || "#888",
+              oldOrbs,
+              newOrbs: newCell.orbs,
+              color,
             });
           }
           this.updateCellVelocity(r, c, newCell);
         }
 
-        if (!newCell && oldCell) {
+        if (newCell && oldCell && oldCell.orbs > 0 && newCell.orbs === 0) {
           const ca = this.cellAnims[r]?.[c];
           if (ca) {
             ca.targetVelocity = 0.3;
@@ -358,12 +434,12 @@ export class BoardRenderer {
     for (const g of gained) {
       const ca = this.cellAnims[g.r]?.[g.c];
       if (ca) {
-        while (ca.orbScales.length < g.newMass) {
+        while (ca.orbScales.length < g.newOrbs) {
           ca.orbScales.push(0);
           ca.orbSpawnTimers.push(0);
         }
-        ca.orbScales.length = g.newMass;
-        ca.orbSpawnTimers.length = g.newMass;
+        ca.orbScales.length = g.newOrbs;
+        ca.orbSpawnTimers.length = g.newOrbs;
       }
     }
 
@@ -401,11 +477,12 @@ export class BoardRenderer {
           row: e.r,
           col: e.c,
           color: e.color,
-          sourceOrb: e.orb,
+          playerIndex: oldGrid[e.r][e.c].owner ?? -1,
+          sourceOrbCount: e.orbCount,
           neighbors,
           flights,
           chainIndex: idx,
-          startDelay: idx * 0.16,
+          startDelay: idx * 0.2,
           elapsed: 0,
           active: false,
           done: false,
@@ -434,22 +511,33 @@ export class BoardRenderer {
     }
   }
 
-  private updateCellVelocity(r: number, c: number, orb: Orb): void {
+  private updateCellVelocity(r: number, c: number, cell: Cell): void {
     const ca = this.cellAnims[r]?.[c];
     if (!ca) return;
 
     const critMass = getCriticalMass(r, c, this.rows, this.cols);
-    const remaining = critMass - orb.mass;
+    const remaining = critMass - cell.orbs;
+    const playerIdx = cell.owner ?? 0;
+    const direction = playerIdx % 2 === 0 ? 1 : -1;
 
-    let targetVel: number;
-    if (remaining >= 3) targetVel = 0.3;
-    else if (remaining === 2) targetVel = 0.6;
-    else if (remaining === 1) targetVel = 1.4;
-    else targetVel = 3.0;
-
-    const colorIdx = this.playerColorIndex[orb.color] ?? 0;
-    const dir = colorIdx % 2 === 0 ? 1 : -1;
-    ca.targetVelocity = targetVel * dir;
+    // Rule 1: 1 orb never rotates
+    if (cell.orbs <= 1) {
+      ca.targetVelocity = 0;
+      // Rule 3 special case: corner cell with 1 orb has remaining=1, fast pulse
+      if (remaining === 1) {
+        ca.pulsePeriod = 0.6; // danger pulse
+      } else {
+        ca.pulsePeriod = 2.0; // normal idle pulse
+      }
+    }
+    // Rule 2 & 3: 2+ orbs orbit based on remaining
+    else if (remaining === 1) {
+      ca.targetVelocity = 1.8 * direction; // fast urgent
+      ca.pulsePeriod = 2.0;
+    } else {
+      ca.targetVelocity = 0.8 * direction; // slow calm
+      ca.pulsePeriod = 2.0;
+    }
   }
 
   // ── MAIN LOOP ──────────────────────────────────────────
@@ -484,8 +572,9 @@ export class BoardRenderer {
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
         const ca = this.cellAnims[r][c];
+        const cell = grid[r]?.[c];
 
-        // Smooth angular velocity transition (~200ms)
+        // Rule 4: Smooth angular velocity transition (200ms lerp)
         const lerpSpeed = 1 - Math.pow(0.001, dtSec);
         ca.angularVelocity = lerp(
           ca.angularVelocity,
@@ -493,7 +582,17 @@ export class BoardRenderer {
           lerpSpeed,
         );
 
+        // Advance orbit angle (Rule 2)
         ca.angle += ca.angularVelocity * dtSec;
+
+        // Advance pulse phase for idle animation (Rule 1)
+        ca.pulsePhase += (dtSec / ca.pulsePeriod) * Math.PI * 2;
+        // Calculate pulse scale from sine wave
+        ca.pulseScale = 1.0 + 0.06 * Math.sin(ca.pulsePhase);
+        // For corner danger pulse, increase scale range
+        if (ca.pulsePeriod === 0.6) {
+          ca.pulseScale = 1.0 + 0.135 * Math.sin(ca.pulsePhase);
+        }
 
         // Landing flash: 0 → 0.55 → 0 over 100ms (50ms up, 50ms down)
         if (ca.landingFlashTime >= 0) {
@@ -518,8 +617,7 @@ export class BoardRenderer {
         }
 
         // Orb spawn pop
-        const orb = grid[r]?.[c];
-        const orbCount = orb ? Math.min(orb.mass, 4) : 0;
+        const orbCount = cell ? Math.min(cell.orbs, 4) : 0;
         for (let i = 0; i < ca.orbScales.length && i < orbCount; i++) {
           if (ca.orbScales[i] < 1) {
             ca.orbSpawnTimers[i] += dtSec;
@@ -575,16 +673,16 @@ export class BoardRenderer {
         }
       }
 
-      // Phase 2: Scatter (80ms–280ms, 200ms duration)
-      if (exp.elapsed >= 0.08 && exp.elapsed < 0.28) {
-        const scatterT = clamp01((exp.elapsed - 0.08) / 0.2);
+      // Phase 2: Scatter (80ms–430ms, 350ms duration)
+      if (exp.elapsed >= 0.08 && exp.elapsed < 0.43) {
+        const scatterT = clamp01((exp.elapsed - 0.08) / 0.35);
         for (const f of exp.flights) {
           f.progress = scatterT;
         }
       }
 
-      // Phase 3: Impact (starts at 240ms)
-      if (exp.elapsed >= 0.24 && !exp.impactHandled) {
+      // Phase 3: Impact (starts at 400ms)
+      if (exp.elapsed >= 0.4 && !exp.impactHandled) {
         exp.impactHandled = true;
         for (const f of exp.flights) {
           // Landing bounce on target cell
@@ -601,8 +699,8 @@ export class BoardRenderer {
         }
       }
 
-      // Done after 400ms
-      if (exp.elapsed >= 0.4) {
+      // Done after 550ms
+      if (exp.elapsed >= 0.55) {
         exp.done = true;
       }
     }
@@ -696,7 +794,7 @@ export class BoardRenderer {
 
   private drawCellsAndOrbs(
     ctx: CanvasRenderingContext2D,
-    grid: (Orb | null)[][],
+    grid: Cell[][],
   ): void {
     const cs = this.cellSize;
     const ox = this.offsetX;
@@ -707,7 +805,17 @@ export class BoardRenderer {
         const x = ox + c * cs;
         const y = oy + r * cs;
         const ca = this.cellAnims[r][c];
-        const orb = grid[r]?.[c];
+        const cell = grid[r]?.[c];
+
+        // Cell ownership tint background (subtle, under orbs)
+        if (cell && cell.owner !== null) {
+          const ownerColor = PLAYER_HEX[cell.owner] || "#888888";
+          ctx.save();
+          ctx.globalAlpha = 0.08;
+          ctx.fillStyle = ownerColor;
+          ctx.fillRect(x, y, cs, cs);
+          ctx.restore();
+        }
 
         // Selected cell highlight
         if (
@@ -729,13 +837,15 @@ export class BoardRenderer {
         }
 
         // Critical warning pulse
-        if (orb) {
+        if (cell && cell.orbs > 0) {
           const critMass = getCriticalMass(r, c, this.rows, this.cols);
-          if (orb.mass >= critMass) {
+          if (cell.orbs >= critMass) {
+            const colorHex =
+              cell.owner !== null ? PLAYER_HEX[cell.owner] || "#888" : "#888";
             const pulseAlpha = 0.15 + 0.15 * Math.sin(this.globalTime * 0.012);
             ctx.save();
             ctx.globalAlpha = pulseAlpha;
-            ctx.fillStyle = ORB_HEX[orb.color] || "#888";
+            ctx.fillStyle = colorHex;
             ctx.fillRect(x, y, cs, cs);
             ctx.restore();
           }
@@ -743,13 +853,68 @@ export class BoardRenderer {
 
         // Skip orbs for cells that are in charge/scatter phase of explosion
         const isExpSource = this.explosionQueue.some(
-          (e) => e.row === r && e.col === c && e.active && e.elapsed < 0.21,
+          (e) => e.row === r && e.col === c && e.active && e.elapsed < 0.26,
         );
 
-        if (orb && !isExpSource) {
-          this.drawOrbsInCell(ctx, r, c, x, y, cs, orb, ca);
+        if (cell && cell.orbs > 0 && !isExpSource) {
+          this.drawOrbsInCell(ctx, r, c, x, y, cs, cell, ca);
+        }
+
+        // Critical mass indicator dots (bottom-right corner)
+        if (cell && cell.orbs > 0) {
+          this.drawCriticalMassDots(ctx, x, y, cs, cell, r, c);
         }
       }
+    }
+  }
+
+  /**
+   * Draw critical mass indicator dots in bottom-right corner of cell
+   */
+  private drawCriticalMassDots(
+    ctx: CanvasRenderingContext2D,
+    cellX: number,
+    cellY: number,
+    cs: number,
+    cell: Cell,
+    row: number,
+    col: number,
+  ): void {
+    const padding = 5;
+    const dotRadius = 2.5;
+    const dotSpacing = 7;
+    const critMass = getCriticalMass(row, col, this.rows, this.cols);
+    const remaining = Math.max(0, critMass - cell.orbs);
+
+    if (remaining <= 0) return; // No dots if cell will explode
+
+    const dotCount = remaining;
+    const startX =
+      cellX + cs - padding - (dotCount * dotSpacing - dotSpacing / 2);
+    const startY = cellY + cs - padding;
+
+    for (let i = 0; i < dotCount; i++) {
+      const dotX = startX + i * dotSpacing;
+      const dotY = startY;
+
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+
+      // Color based on cell ownership and remaining capacity
+      if (remaining === 1) {
+        // Red pulsing for critical
+        const pulseAlpha = 0.5 + 0.5 * Math.sin(this.globalTime * 0.01);
+        ctx.fillStyle = `rgba(255,68,68,${pulseAlpha})`;
+      } else if (cell.owner !== null) {
+        // Player color at 40% opacity
+        const ownerColor = PLAYER_HEX[cell.owner] || "#888888";
+        ctx.fillStyle = ownerColor + "66";
+      } else {
+        // Empty cell: faint white
+        ctx.fillStyle = "rgba(255,255,255,0.20)";
+      }
+
+      ctx.fill();
     }
   }
 
@@ -760,15 +925,18 @@ export class BoardRenderer {
     cellX: number,
     cellY: number,
     cs: number,
-    orb: Orb,
+    cell: Cell,
     ca: CellAnimState,
   ): void {
     const cx = cellX + cs / 2;
     const cy = cellY + cs / 2;
-    const color = ORB_HEX[orb.color] || "#888888";
-    const mass = Math.min(orb.mass, 4);
-    const radius = this.getOrbRadius(mass, cs);
-    const positions = this.getOrbPositions(mass, cx, cy, cs);
+    const color =
+      cell.owner !== null ? PLAYER_HEX[cell.owner] || "#888888" : "#888888";
+    const orbCount = Math.min(cell.orbs, 4);
+    const radius = this.getOrbRadius(orbCount, cs);
+
+    // Get orbiting positions with animation angle
+    const positions = this.getOrbPositions(orbCount, cx, cy, cs, ca.angle);
 
     // Landing bounce scale
     let bounceScale = 1.0;
@@ -782,79 +950,219 @@ export class BoardRenderer {
       }
     }
 
+    // Get critical mass for glow intensity multiplier
+    const critMass = getCriticalMass(_row, _col, this.rows, this.cols);
+    const remaining = critMass - cell.orbs;
+    let glowMultiplier = 1.0;
+    if (remaining === 1) {
+      glowMultiplier = 1.6; // Bright red pulse at critical
+    }
+
     for (let i = 0; i < positions.length; i++) {
-      const pos = positions[i];
+      let finalScale: number;
 
-      // Idle size pulse
-      const pulsePeriod = 2.0;
-      const pulseOffset = i * 0.4;
-      const pulseT = (this.globalTime / 1000 + pulseOffset) / pulsePeriod;
-      const idleScale = 0.95 + 0.1 * Math.sin(pulseT * Math.PI * 2);
+      if (orbCount === 1) {
+        // Single orb: apply idle pulse (but NOT for corner cells)
+        const isCorner =
+          (_row === 0 || _row === this.rows - 1) &&
+          (_col === 0 || _col === this.cols - 1);
+        const pulseScale = isCorner ? 1.0 : ca.pulseScale;
+        const spawnScale =
+          ca.orbScales[i] !== undefined ? Math.max(ca.orbScales[i], 0.01) : 1;
+        finalScale = pulseScale * spawnScale * bounceScale;
+      } else {
+        // Multiple orbiting orbs: subtle per-orb pulse
+        const subtlePulse = 1.0 + 0.025 * Math.sin(ca.pulsePhase + i * 0.8);
+        const spawnScale =
+          ca.orbScales[i] !== undefined ? Math.max(ca.orbScales[i], 0.01) : 1;
+        finalScale = subtlePulse * spawnScale * bounceScale;
+      }
 
-      // Spawn pop scale
-      const spawnScale =
-        ca.orbScales[i] !== undefined ? Math.max(ca.orbScales[i], 0.01) : 1;
-
-      const finalScale = idleScale * spawnScale * bounceScale;
       const finalRadius = radius * finalScale;
 
-      // Spin angle for self-rotation visual
-      const spinAngle = ca.angle + (i * Math.PI * 2) / Math.max(mass, 1);
-
-      this.drawOrb3D(ctx, pos.x, pos.y, finalRadius, color, spinAngle);
+      // Draw orb with all 4 layers: glow, body with rotation texture, specular
+      this.drawOrbComplete(
+        ctx,
+        positions[i].x,
+        positions[i].y,
+        finalRadius,
+        color,
+        finalScale,
+        glowMultiplier,
+        ca.angle,
+      );
     }
   }
 
-  /** Fixed positions in cell (no orbiting) */
+  /** Positions in cell: single orb at center or orbiting */
   private getOrbPositions(
     mass: number,
     cx: number,
     cy: number,
     cs: number,
+    orbitAngle: number = 0,
   ): { x: number; y: number }[] {
-    const off = cs * 0.2;
     const m = Math.min(mass, 4);
-    switch (m) {
-      case 1:
-        return [{ x: cx, y: cy }];
-      case 2:
-        return [
-          { x: cx - off * 0.7, y: cy - off * 0.3 },
-          { x: cx + off * 0.7, y: cy + off * 0.3 },
-        ];
-      case 3:
-        return [
-          { x: cx, y: cy - off * 0.8 },
-          { x: cx - off * 0.8, y: cy + off * 0.5 },
-          { x: cx + off * 0.8, y: cy + off * 0.5 },
-        ];
-      default:
-        return [
-          { x: cx - off * 0.7, y: cy - off * 0.7 },
-          { x: cx + off * 0.7, y: cy - off * 0.7 },
-          { x: cx - off * 0.7, y: cy + off * 0.7 },
-          { x: cx + off * 0.7, y: cy + off * 0.7 },
-        ];
+    const orbitRadius = cs * 0.22; // Orbit radius for 2+ orbs
+
+    if (m === 1) {
+      // Single orb at center
+      return [{ x: cx, y: cy }];
     }
+
+    // 2+ orbs orbit around center at evenly spaced angles
+    const positions: { x: number; y: number }[] = [];
+    for (let i = 0; i < m; i++) {
+      const angle = orbitAngle + (i / m) * Math.PI * 2;
+      const x = cx + Math.cos(angle) * orbitRadius;
+      const y = cy + Math.sin(angle) * orbitRadius;
+      positions.push({ x, y });
+    }
+    return positions;
   }
 
   private getOrbRadius(mass: number, cs: number): number {
-    switch (Math.min(mass, 4)) {
-      case 1:
-        return cs * 0.25;
-      case 2:
-        return cs * 0.2;
-      case 3:
-        return cs * 0.17;
-      default:
-        return cs * 0.15;
-    }
+    // All orbs are the same size per spec: orbRadius = cellSize * 0.18
+    return cs * 0.18;
   }
 
   /**
-   * Draw a 3D-looking orb. The colored gradient highlight rotates
-   * with `spinAngle` to show the ball spinning in place. The white
-   * specular highlight stays fixed (simulates fixed overhead light).
+   * Draw complete orb with all layers per spec:
+   * - Glow circle
+   * - Orb body with radial gradient
+   * - Rotating surface texture (shows rotation)
+   * - Specular highlight
+   */
+  private drawOrbComplete(
+    ctx: CanvasRenderingContext2D,
+    orbX: number,
+    orbY: number,
+    orbRadius: number,
+    playerColor: string,
+    scale: number = 1.0,
+    glowMultiplier: number = 1.0,
+    rotationAngle: number = 0,
+  ): void {
+    if (orbRadius < 0.5) return;
+
+    ctx.save();
+    ctx.globalAlpha *= 1.0;
+
+    // ──────────────────────────────────────────────────────
+    // 1. GLOW CIRCLE (soft colored halo)
+    // ──────────────────────────────────────────────────────
+    const glowRadius = orbRadius * 2.2;
+    const glowGrad = ctx.createRadialGradient(
+      orbX,
+      orbY,
+      0,
+      orbX,
+      orbY,
+      glowRadius,
+    );
+
+    // Extract RGB for glow color stops
+    const [pr, pg, pb] = parseHex(playerColor);
+    glowGrad.addColorStop(
+      0,
+      `rgba(${pr},${pg},${pb},${0.35 * glowMultiplier})`,
+    );
+    glowGrad.addColorStop(
+      0.6,
+      `rgba(${pr},${pg},${pb},${0.1 * glowMultiplier})`,
+    );
+    glowGrad.addColorStop(1, `rgba(${pr},${pg},${pb},0)`);
+
+    ctx.beginPath();
+    ctx.arc(orbX, orbY, glowRadius, 0, Math.PI * 2);
+    ctx.fillStyle = glowGrad;
+    ctx.fill();
+
+    // ──────────────────────────────────────────────────────
+    // 2. ORB BODY (main sphere with radial gradient)
+    // ──────────────────────────────────────────────────────
+    // Gradient center: offset 30% up and 30% left from center
+    const hlX = orbX - orbRadius * 0.3;
+    const hlY = orbY - orbRadius * 0.3;
+
+    const bodyGrad = ctx.createRadialGradient(
+      hlX,
+      hlY,
+      0,
+      orbX,
+      orbY,
+      orbRadius,
+    );
+
+    const lightColor = lighten(playerColor, 60);
+    const darkColor = darken(playerColor, 50);
+
+    bodyGrad.addColorStop(0, lightColor);
+    bodyGrad.addColorStop(0.4, playerColor);
+    bodyGrad.addColorStop(1, darkColor);
+
+    ctx.beginPath();
+    ctx.arc(orbX, orbY, orbRadius, 0, Math.PI * 2);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    // ──────────────────────────────────────────────────────
+    // 2.5. ROTATING SURFACE TEXTURE (shows rotation)
+    // ──────────────────────────────────────────────────────
+    ctx.save();
+    ctx.translate(orbX, orbY);
+    ctx.rotate(rotationAngle);
+    ctx.translate(-orbX, -orbY);
+
+    // Draw rotating stripe pattern on orb surface
+    const stripeCount = 4;
+    const stripeWidth = (Math.PI * 2) / stripeCount;
+
+    for (let s = 0; s < stripeCount; s++) {
+      const angle = s * stripeWidth;
+      const nextAngle = angle + stripeWidth * 0.35;
+
+      ctx.beginPath();
+      ctx.moveTo(orbX, orbY);
+      ctx.arc(orbX, orbY, orbRadius * 0.95, angle, nextAngle);
+      ctx.closePath();
+
+      // Alternate stripe opacity for visible texture
+      const stripeAlpha = s % 2 === 0 ? 0.15 : 0.05;
+      ctx.fillStyle = `rgba(0,0,0,${stripeAlpha})`;
+      ctx.fill();
+    }
+
+    ctx.restore();
+
+    // ──────────────────────────────────────────────────────
+    // 3. SPECULAR HIGHLIGHT (white glint, fixed position)
+    // ──────────────────────────────────────────────────────
+    const specX = orbX - orbRadius * 0.28;
+    const specY = orbY - orbRadius * 0.28;
+    const specRadius = orbRadius * 0.22;
+
+    const specGrad = ctx.createRadialGradient(
+      specX,
+      specY,
+      0,
+      specX,
+      specY,
+      specRadius,
+    );
+    specGrad.addColorStop(0, "rgba(255,255,255,0.95)");
+    specGrad.addColorStop(1, "rgba(255,255,255,0.00)");
+
+    ctx.beginPath();
+    ctx.arc(specX, specY, specRadius, 0, Math.PI * 2);
+    ctx.fillStyle = specGrad;
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * Legacy method name for backwards compatibility with flying orbs
    */
   private drawOrb3D(
     ctx: CanvasRenderingContext2D,
@@ -862,70 +1170,10 @@ export class BoardRenderer {
     cy: number,
     radius: number,
     baseColor: string,
-    spinAngle: number = 0,
+    _spinAngle: number = 0,
   ): void {
-    if (radius < 0.5) return;
-    const [rr, gg, bb] = parseHex(baseColor);
-
-    // Drop shadow
-    ctx.beginPath();
-    ctx.ellipse(
-      cx + 1,
-      cy + radius * 0.5,
-      radius * 0.65,
-      radius * 0.15,
-      0,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fill();
-
-    // Main sphere gradient — bright spot rotates with spin
-    const hlDist = radius * 0.3;
-    const hlX = cx + Math.cos(spinAngle) * hlDist;
-    const hlY = cy + Math.sin(spinAngle) * hlDist;
-
-    const grad = ctx.createRadialGradient(hlX, hlY, 0, cx, cy, radius);
-    const lr = Math.min(255, rr + 80);
-    const lg = Math.min(255, gg + 80);
-    const lb = Math.min(255, bb + 80);
-    grad.addColorStop(0, `rgb(${lr},${lg},${lb})`);
-    grad.addColorStop(0.45, baseColor);
-    const dr = Math.floor(rr * 0.25);
-    const dg = Math.floor(gg * 0.25);
-    const db = Math.floor(bb * 0.25);
-    grad.addColorStop(1, `rgb(${dr},${dg},${db})`);
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
-
-    // Specular highlight — FIXED at upper-left (never rotates)
-    const specGrad = ctx.createRadialGradient(
-      cx - radius * 0.3,
-      cy - radius * 0.3,
-      0,
-      cx - radius * 0.25,
-      cy - radius * 0.25,
-      radius * 0.55,
-    );
-    specGrad.addColorStop(0, "rgba(255,255,255,0.75)");
-    specGrad.addColorStop(0.4, "rgba(255,255,255,0.15)");
-    specGrad.addColorStop(1, "rgba(255,255,255,0)");
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fillStyle = specGrad;
-    ctx.fill();
-
-    // Rim glow
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(${rr},${gg},${bb},0.4)`;
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
+    // Use the new complete orb drawing
+    this.drawOrbComplete(ctx, cx, cy, radius, baseColor, 1.0, 1.0);
   }
 
   // ── EXPLOSION EFFECTS ──────────────────────────────────
@@ -973,14 +1221,21 @@ export class BoardRenderer {
         // Draw source orbs (from snapshot) spinning fast
         const ca = this.cellAnims[exp.row]?.[exp.col];
         if (ca) {
-          const mass = Math.min(exp.sourceOrb.mass, 4);
-          const radius = this.getOrbRadius(mass, cs);
-          const positions = this.getOrbPositions(mass, cx, cy, cs);
+          const orbCount = Math.min(exp.sourceOrbCount, 4);
+          const radius = this.getOrbRadius(orbCount, cs);
+          const positions = this.getOrbPositions(
+            orbCount,
+            cx,
+            cy,
+            cs,
+            ca.angle,
+          );
           // Scale pulse: 1.0 → 1.12 ease-out
           const chargeScale = 1.0 + 0.12 * easeOutQuad(t);
 
           for (let i = 0; i < positions.length; i++) {
-            const spinAngle = ca.angle + (i * Math.PI * 2) / Math.max(mass, 1);
+            const spinAngle =
+              ca.angle + (i * Math.PI * 2) / Math.max(orbCount, 1);
             this.drawOrb3D(
               ctx,
               positions[i].x,
@@ -993,8 +1248,8 @@ export class BoardRenderer {
         }
       }
 
-      // ── Phase 2: Scatter (80ms–280ms, 200ms duration) ──
-      if (exp.elapsed >= 0.08 && exp.elapsed < 0.28) {
+      // ── Phase 2: Scatter (80ms–430ms, 350ms duration) ──
+      if (exp.elapsed >= 0.08 && exp.elapsed < 0.43) {
         // Source cell: scale snaps back (1.12 → 0.9 → 1.0 over 80ms)
         const releaseT = clamp01((exp.elapsed - 0.08) / 0.08);
         if (releaseT < 0.5) {
@@ -1007,12 +1262,24 @@ export class BoardRenderer {
           ctx.restore();
         }
 
-        // Draw flying orbs with trails
+        // Draw flying orbs with trails and path lines
         for (const f of exp.flights) {
           const t = f.progress;
           // Current position (straight line)
           const px = f.startX + (f.endX - f.startX) * t;
           const py = f.startY + (f.endY - f.startY) * t;
+
+          // Draw path line showing travel route
+          ctx.save();
+          ctx.strokeStyle = f.color;
+          ctx.globalAlpha = 0.3 - t * 0.2; // Fade as orb moves
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 5]);
+          ctx.beginPath();
+          ctx.moveTo(f.startX, f.startY);
+          ctx.lineTo(px, py);
+          ctx.stroke();
+          ctx.restore();
 
           // Trail: 8 circles over last 55px
           const totalDist = Math.sqrt(
@@ -1055,6 +1322,10 @@ export class BoardRenderer {
 
   addScreenShake(): void {
     this.screenShaker.addShake(4, 200);
+  }
+
+  hasActiveExplosions(): boolean {
+    return this.explosionQueue.length > 0;
   }
 
   destroy(): void {
