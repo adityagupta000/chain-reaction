@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRoom, useBoardState, useGameStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AVAILABLE_COLORS } from "@/lib/types";
+import { AnimatedBackground } from "./AnimatedBackground";
+import { Confetti } from "./Confetti";
 
 export function GameOver() {
   const room = useRoom();
@@ -30,31 +33,34 @@ export function GameOver() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <Card className="w-full max-w-md bg-gray-900 border-gray-800">
+    <div className="min-h-screen motion-bg flex items-center justify-center p-4 relative overflow-hidden">
+      <AnimatedBackground />
+      <Confetti />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(99,102,241,0.1),transparent_50%)] pointer-events-none"></div>
+      <Card className="w-full max-w-md bg-white border-2 border-blue-400 shadow-2xl shadow-blue-200 relative z-10">
         <div className="p-8 text-center">
           {isDraw ? (
             <>
-              <h1 className="text-4xl font-bold text-white mb-4">
-                It's a Draw!
+              <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-yellow-600 mb-4">
+                IT'S A DRAW!
               </h1>
-              <p className="text-slate-300 mb-8">
-                Multiple players tied for the top!
+              <p className="text-gray-700 mb-8 font-semibold">
+                Multiple players tied for glory!
               </p>
             </>
           ) : (
             <>
-              <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400 mb-4">
-                {ranked[0]?.name} Wins!
+              <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-orange-500 mb-4">
+                🏆 {ranked[0]?.name.toUpperCase()} WINS! 🏆
               </h1>
-              <p className="text-slate-300 mb-8">
-                Congratulations on your explosive victory!
+              <p className="text-gray-700 mb-8 font-semibold">
+                EXPLOSIVE VICTORY!
               </p>
             </>
           )}
 
           {/* Final Scores */}
-          <div className="bg-slate-700 rounded-lg p-6 mb-8 space-y-3">
+          <div className="bg-blue-50 border border-blue-300 rounded-lg p-6 mb-8 space-y-3">
             {ranked.map((player, idx) => {
               const colorInfo = AVAILABLE_COLORS.find(
                 (c) => c.value === player.color,
@@ -74,9 +80,9 @@ export function GameOver() {
 
           <Button
             onClick={handlePlayAgain}
-            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold shadow-lg shadow-blue-400 hover:shadow-blue-500 transition-all"
           >
-            Play Again
+            PLAY AGAIN
           </Button>
         </div>
       </Card>
