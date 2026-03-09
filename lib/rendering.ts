@@ -223,6 +223,24 @@ export class BoardRenderer {
   private gridColor: string = "#1a1a1a";
   private gridAccentColor: string = "#0d0d0d";
 
+  // Chain animation system
+  private animBoard: Cell[][] | null = null;
+  private isChainAnimating_: boolean = false;
+  private chainBoardStates: Cell[][][] = [];
+  private chainSourceOrbCounts: number[] = [];
+  private chainExplosionSequence: ExplosionStep[] = [];
+  private chainEliminations: { stepIndex: number; playerIndex: number }[] = [];
+  private chainVisualBoardIndex: number = 0;
+  private chainStepIndex_: number = 0;
+  private chainLength_: number = 0;
+  private chainAnimTimer: ReturnType<typeof setTimeout> | null = null;
+  private chainAllQueued: boolean = false;
+  private onChainStepCallback: ((step: number) => void) | null = null;
+  private onEliminationCallback: ((playerIndex: number) => void) | null = null;
+  private onChainCompleteCallback: (() => void) | null = null;
+  private victoryFlashAlpha: number = 0;
+  private victoryFlashDecay: number = 0;
+
   private resizeHandler: () => void;
 
   constructor(canvas: HTMLCanvasElement, rows: number = 9, cols: number = 6) {
@@ -337,7 +355,9 @@ export class BoardRenderer {
   private getPlayerHex(ownerIndex: number): string {
     const player = this.players[ownerIndex];
     if (player?.color) {
-      return COLOR_NAME_TO_HEX[player.color] || PLAYER_HEX[ownerIndex] || "#888888";
+      return (
+        COLOR_NAME_TO_HEX[player.color] || PLAYER_HEX[ownerIndex] || "#888888"
+      );
     }
     return PLAYER_HEX[ownerIndex] || "#888888";
   }
@@ -371,6 +391,11 @@ export class BoardRenderer {
           }
         }
       }
+      return;
+    }
+
+    // Skip detectChanges during chain animation — animations are driven by sequence
+    if (this.isChainAnimating_) {
       return;
     }
 
@@ -408,9 +433,7 @@ export class BoardRenderer {
         ) {
           // Cell exploded (became empty after having orbs)
           const color =
-            oldCell.owner !== null
-              ? this.getPlayerHex(oldCell.owner)
-              : "#888";
+            oldCell.owner !== null ? this.getPlayerHex(oldCell.owner) : "#888";
           exploded.push({
             r,
             c,
@@ -555,6 +578,304 @@ export class BoardRenderer {
     }
   }
 
+  // ── CHAIN ANIMATION SYSTEM ─────────────────────────────
+
+  private deepCloneGrid(grid: Cell[][]): Cell[][] {
+    return grid.map((row) => row.map((cell) => ({ ...cell })));
+  }
+
+  private updateAllCellVelocities(grid?: Cell[][]): void {
+    const g = grid || this.animBoard || this.currentGrid;
+    if (!g) return;
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const cell = g[r]?.[c];
+        if (cell) {
+          this.updateCellVelocity(r, c, cell);
+          // Sync orb scales
+          const ca = this.cellAnims[r]?.[c];
+          if (ca) {
+            while (ca.orbScales.length < cell.orbs) {
+              ca.orbScales.push(1);
+              ca.orbSpawnTimers.push(0);
+            }
+            ca.orbScales.length = Math.max(0, cell.orbs);
+            ca.orbSpawnTimers.length = Math.max(0, cell.orbs);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Start a chain reaction animation driven by the server's explosion sequence.
+   * The renderer will step through each explosion with proper timing, updating
+   * an intermediate animBoard, and call onComplete when fully done.
+   */
+  startChainAnimation(
+    preMoveBoard: Cell[][],
+    moveRow: number,
+    moveCol: number,
+    movePlayerIndex: number,
+    explosionSequence: ExplosionStep[],
+    finalBoard: Cell[][],
+    players: Player[],
+    onChainStep: (step: number) => void,
+    onElimination: (playerIndex: number) => void,
+    onComplete: () => void,
+  ): void {
+    // Abort any in-progress chain animation
+    this.abortChainAnimation();
+
+    this.players = players;
+    this.isChainAnimating_ = true;
+    this.chainLength_ = explosionSequence.length;
+    this.chainStepIndex_ = 0;
+    this.chainAllQueued = false;
+    this.onChainStepCallback = onChainStep;
+    this.onEliminationCallback = onElimination;
+    this.onChainCompleteCallback = onComplete;
+    this.chainExplosionSequence = explosionSequence;
+
+    // Precompute board states after each explosion step
+    const board = this.deepCloneGrid(preMoveBoard);
+    board[moveRow][moveCol].orbs += 1;
+    board[moveRow][moveCol].owner = movePlayerIndex;
+
+    this.chainBoardStates = [this.deepCloneGrid(board)];
+    this.chainSourceOrbCounts = [];
+    this.chainEliminations = [];
+
+    const eliminated = new Set<number>();
+
+    for (let i = 0; i < explosionSequence.length; i++) {
+      const step = explosionSequence[i];
+      this.chainSourceOrbCounts.push(board[step.row][step.col].orbs);
+
+      board[step.row][step.col].orbs = 0;
+      board[step.row][step.col].owner = null;
+
+      for (const [nr, nc] of step.neighbors) {
+        board[nr][nc].orbs += 1;
+        board[nr][nc].owner = step.playerIndex;
+      }
+
+      this.chainBoardStates.push(this.deepCloneGrid(board));
+
+      // Check for mid-chain eliminations
+      for (let pi = 0; pi < players.length; pi++) {
+        if (eliminated.has(pi)) continue;
+        if (!players[pi].hasMovedOnce) continue;
+        let orbCount = 0;
+        for (const row of board) {
+          for (const cell of row) {
+            if (cell.owner === pi) orbCount += cell.orbs;
+          }
+        }
+        if (orbCount === 0) {
+          eliminated.add(pi);
+          this.chainEliminations.push({ stepIndex: i, playerIndex: pi });
+        }
+      }
+    }
+
+    // Set initial visual state (after orb placement, before explosions)
+    this.chainVisualBoardIndex = 0;
+    this.animBoard = this.chainBoardStates[0];
+
+    // Trigger spawn animation for the placed orb
+    const ca = this.cellAnims[moveRow]?.[moveCol];
+    if (ca) {
+      const orbCount = this.animBoard[moveRow][moveCol].orbs;
+      while (ca.orbScales.length < orbCount) {
+        ca.orbScales.push(0); // pop-in animation
+        ca.orbSpawnTimers.push(0);
+      }
+      ca.orbScales.length = orbCount;
+      ca.orbSpawnTimers.length = orbCount;
+    }
+    this.updateAllCellVelocities(this.animBoard);
+
+    // If no explosions, just settle after orb placement
+    if (explosionSequence.length === 0) {
+      this.chainAnimTimer = setTimeout(() => {
+        this.finishChainAnimation();
+      }, 200);
+      return;
+    }
+
+    // Start first explosion step after a short delay for orb placement
+    this.chainAnimTimer = setTimeout(() => {
+      this.queueChainStep(0);
+    }, 100);
+  }
+
+  private queueChainStep(stepIndex: number): void {
+    if (stepIndex >= this.chainExplosionSequence.length) {
+      this.chainAllQueued = true;
+      return;
+    }
+
+    const step = this.chainExplosionSequence[stepIndex];
+    const sourceOrbCount = this.chainSourceOrbCounts[stepIndex];
+    this.chainStepIndex_ = stepIndex;
+
+    // Update animBoard: source cell empties immediately (hidden by isExpSource)
+    if (this.animBoard) {
+      this.animBoard[step.row][step.col] = { orbs: 0, owner: null };
+    }
+
+    // Create explosion entry
+    const cx = this.offsetX + step.col * this.cellSize + this.cellSize / 2;
+    const cy = this.offsetY + step.row * this.cellSize + this.cellSize / 2;
+
+    const flights: OrbFlight[] = step.neighbors.map(([nr, nc]) => {
+      const tx = this.offsetX + nc * this.cellSize + this.cellSize / 2;
+      const ty = this.offsetY + nr * this.cellSize + this.cellSize / 2;
+      return {
+        startX: cx,
+        startY: cy,
+        endX: tx,
+        endY: ty,
+        progress: 0,
+        color: this.getPlayerHex(step.playerIndex),
+        radius: this.getOrbRadius(1, this.cellSize),
+        dirAngle: Math.atan2(ty - cy, tx - cx),
+      };
+    });
+
+    this.explosionQueue.push({
+      row: step.row,
+      col: step.col,
+      color: this.getPlayerHex(step.playerIndex),
+      playerIndex: step.playerIndex,
+      sourceOrbCount,
+      neighbors: step.neighbors,
+      flights,
+      chainIndex: stepIndex,
+      startDelay: 0,
+      elapsed: 0,
+      active: true,
+      done: false,
+      ringRadius: 0,
+      impactHandled: false,
+      soundPlayed: false,
+    });
+
+    // Screen shake scaled to chain length
+    const shakeIntensity = this.getChainShakeIntensity(stepIndex + 1);
+    if (shakeIntensity > 0) {
+      this.screenShaker.addShake(shakeIntensity, 200 + stepIndex * 10);
+    }
+
+    // Visual effects for longer chains
+    if (stepIndex >= 5 && stepIndex < 10) {
+      this.vignetteAlpha = Math.max(this.vignetteAlpha, 0.35);
+      this.vignetteDecay = 0.35 / 0.4;
+    } else if (stepIndex >= 10) {
+      this.flashOverlayAlpha = Math.max(this.flashOverlayAlpha, 0.18);
+      this.flashOverlayDecay = 0.18 / 0.4;
+      this.vignetteAlpha = Math.max(this.vignetteAlpha, 0.5);
+      this.vignetteDecay = 0.5 / 0.5;
+    }
+
+    // Chain step callback (for UI counter)
+    if (this.onChainStepCallback && stepIndex > 0) {
+      this.onChainStepCallback(stepIndex + 1);
+    }
+
+    // Schedule next step with 120ms overlap (or 520ms if elimination pause)
+    if (stepIndex + 1 < this.chainExplosionSequence.length) {
+      const elimination = this.chainEliminations.find(
+        (e) => e.stepIndex === stepIndex,
+      );
+      const delay = elimination ? 520 : 120;
+
+      if (elimination && this.onEliminationCallback) {
+        this.onEliminationCallback(elimination.playerIndex);
+      }
+
+      this.chainAnimTimer = setTimeout(() => {
+        this.queueChainStep(stepIndex + 1);
+      }, delay);
+    } else {
+      this.chainAllQueued = true;
+      this.chainAnimTimer = null;
+    }
+  }
+
+  private getChainShakeIntensity(chainStep: number): number {
+    if (chainStep < 2) return 0;
+    return Math.min(14, chainStep);
+  }
+
+  private finishChainAnimation(): void {
+    // Set currentGrid to final state
+    if (this.chainBoardStates.length > 0) {
+      this.currentGrid =
+        this.chainBoardStates[this.chainBoardStates.length - 1];
+    }
+    this.animBoard = null;
+    this.isChainAnimating_ = false;
+    this.chainBoardStates = [];
+    this.chainSourceOrbCounts = [];
+    this.chainExplosionSequence = [];
+    this.chainEliminations = [];
+    this.chainAllQueued = false;
+    this.chainVisualBoardIndex = 0;
+    this.chainStepIndex_ = 0;
+    this.chainLength_ = 0;
+
+    // Update all cell velocities for final board
+    this.updateAllCellVelocities();
+
+    const cb = this.onChainCompleteCallback;
+    this.onChainCompleteCallback = null;
+    this.onChainStepCallback = null;
+    this.onEliminationCallback = null;
+
+    if (cb) cb();
+  }
+
+  private abortChainAnimation(): void {
+    if (this.chainAnimTimer) {
+      clearTimeout(this.chainAnimTimer);
+      this.chainAnimTimer = null;
+    }
+    this.explosionQueue = [];
+    this.animBoard = null;
+    this.isChainAnimating_ = false;
+    this.chainBoardStates = [];
+    this.chainSourceOrbCounts = [];
+    this.chainExplosionSequence = [];
+    this.chainEliminations = [];
+    this.chainAllQueued = false;
+    this.onChainCompleteCallback = null;
+    this.onChainStepCallback = null;
+    this.onEliminationCallback = null;
+  }
+
+  /** Trigger a victory white flash overlay */
+  triggerVictoryFlash(): void {
+    this.victoryFlashAlpha = 0.4;
+    this.victoryFlashDecay = 0.4 / 1.0; // fade over 1 second
+  }
+
+  /** Get current chain step for external UI */
+  get chainStep(): number {
+    return this.chainStepIndex_;
+  }
+
+  /** Get total chain length */
+  get chainLength(): number {
+    return this.chainLength_;
+  }
+
+  /** Whether a chain animation is currently playing */
+  get isChainAnimating(): boolean {
+    return this.isChainAnimating_;
+  }
+
   // ── MAIN LOOP ──────────────────────────────────────────
 
   private _loop(timestamp: number): void {
@@ -574,6 +895,25 @@ export class BoardRenderer {
       this.vignetteAlpha -= this.vignetteDecay * dtSec;
       if (this.vignetteAlpha < 0) this.vignetteAlpha = 0;
     }
+    if (this.victoryFlashAlpha > 0) {
+      this.victoryFlashAlpha -= this.victoryFlashDecay * dtSec;
+      if (this.victoryFlashAlpha < 0) this.victoryFlashAlpha = 0;
+    }
+
+    // Check if chain animation is complete (all steps queued + all explosions done)
+    if (
+      this.isChainAnimating_ &&
+      this.chainAllQueued &&
+      this.explosionQueue.length === 0
+    ) {
+      // Brief settle period before finishing
+      if (!this.chainAnimTimer) {
+        this.chainAnimTimer = setTimeout(() => {
+          this.chainAnimTimer = null;
+          this.finishChainAnimation();
+        }, 150);
+      }
+    }
 
     this.drawFrame();
 
@@ -581,7 +921,7 @@ export class BoardRenderer {
   }
 
   private updateCellAnimations(dtSec: number): void {
-    const grid = this.currentGrid;
+    const grid = this.animBoard || this.currentGrid;
     if (!grid) return;
 
     for (let r = 0; r < this.rows; r++) {
@@ -663,21 +1003,12 @@ export class BoardRenderer {
       // Play sound at activation
       if (!exp.soundPlayed) {
         exp.soundPlayed = true;
-        const sm = getSoundManager();
-        // Pitch escalation: 1.0 + stepIndex * 0.08, capped at 2.0
-        const pitch = Math.min(2.0, 1.0 + exp.chainIndex * 0.08);
-        if (exp.chainIndex === 0) {
-          // First explosion: deeper "explode" tone
-          sm.playTone(200 * pitch, 120, "sine");
-        } else {
-          // Chain steps: higher "chain" tone
-          sm.playTone(400 * pitch, 100, "sine");
-        }
+        getSoundManager().explosionAtPitch(exp.chainIndex);
       }
 
-      // Phase 1: Charge (0–80ms)
-      if (exp.elapsed < 0.08) {
-        const t = exp.elapsed / 0.08;
+      // Phase 1: Charge (0–60ms)
+      if (exp.elapsed < 0.06) {
+        const t = exp.elapsed / 0.06;
         exp.ringRadius = t * this.cellSize * 0.7;
 
         // Override cell spin to fast blur
@@ -688,17 +1019,27 @@ export class BoardRenderer {
         }
       }
 
-      // Phase 2: Scatter (80ms–430ms, 350ms duration)
-      if (exp.elapsed >= 0.08 && exp.elapsed < 0.43) {
-        const scatterT = clamp01((exp.elapsed - 0.08) / 0.35);
+      // Phase 2: Scatter (60ms–210ms, 150ms duration)
+      if (exp.elapsed >= 0.06 && exp.elapsed < 0.21) {
+        const scatterT = clamp01((exp.elapsed - 0.06) / 0.15);
         for (const f of exp.flights) {
           f.progress = scatterT;
         }
       }
 
-      // Phase 3: Impact (starts at 400ms)
-      if (exp.elapsed >= 0.4 && !exp.impactHandled) {
+      // Phase 3: Impact (starts at 210ms)
+      if (exp.elapsed >= 0.21 && !exp.impactHandled) {
         exp.impactHandled = true;
+
+        // During chain animation, advance the visual board to post-step state
+        if (this.isChainAnimating_) {
+          const newIndex = exp.chainIndex + 1;
+          if (newIndex < this.chainBoardStates.length) {
+            this.chainVisualBoardIndex = newIndex;
+            this.animBoard = this.chainBoardStates[newIndex];
+          }
+        }
+
         for (const f of exp.flights) {
           // Landing bounce on target cell
           const cell = this.getCellFromPixel(f.endX, f.endY);
@@ -707,15 +1048,28 @@ export class BoardRenderer {
             if (ca) {
               ca.landingBounceTime = 0;
               ca.landingBounceColor = f.color;
-              ca.landingFlashTime = 0; // start the 0→0.55→0 ramp
+              ca.landingFlashTime = 0;
               ca.landingFlashOpacity = 0;
+
+              // Update spawn scales for newly arrived orb
+              const targetCell =
+                this.animBoard?.[cell[0]]?.[cell[1]] ||
+                this.currentGrid?.[cell[0]]?.[cell[1]];
+              if (targetCell && targetCell.orbs > 0) {
+                while (ca.orbScales.length < targetCell.orbs) {
+                  ca.orbScales.push(0);
+                  ca.orbSpawnTimers.push(0);
+                }
+                ca.orbScales.length = targetCell.orbs;
+                ca.orbSpawnTimers.length = targetCell.orbs;
+              }
             }
           }
         }
       }
 
-      // Done after 550ms
-      if (exp.elapsed >= 0.55) {
+      // Done after 310ms
+      if (exp.elapsed >= 0.31) {
         exp.done = true;
       }
     }
@@ -740,8 +1094,10 @@ export class BoardRenderer {
 
     this.drawGridLines(ctx);
 
-    if (this.currentGrid) {
-      this.drawCellsAndOrbs(ctx, this.currentGrid);
+    // Use animBoard during chain animation, currentGrid otherwise
+    const gridToDraw = this.animBoard || this.currentGrid;
+    if (gridToDraw) {
+      this.drawCellsAndOrbs(ctx, gridToDraw);
     }
 
     this.drawExplosionEffects(ctx);
@@ -774,6 +1130,52 @@ export class BoardRenderer {
       ctx.fillRect(0, 0, canvasW, canvasH);
       ctx.restore();
     }
+
+    // Victory flash overlay
+    if (this.victoryFlashAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = this.victoryFlashAlpha;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvasW, canvasH);
+      ctx.restore();
+    }
+
+    // Chain counter on canvas
+    if (this.isChainAnimating_ && this.chainStepIndex_ > 0) {
+      this.drawChainCounter(ctx, canvasW, canvasH);
+    }
+  }
+
+  private drawChainCounter(
+    ctx: CanvasRenderingContext2D,
+    canvasW: number,
+    canvasH: number,
+  ): void {
+    const text = `CHAIN x${this.chainStepIndex_ + 1}`;
+    const fontSize = Math.max(24, Math.min(48, canvasW * 0.06));
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `900 ${fontSize}px sans-serif`;
+
+    // Slight bounce based on global time
+    const bounce = Math.sin(this.globalTime * 0.008) * 3;
+    const y = canvasH * 0.18 + bounce;
+
+    // Glow
+    ctx.shadowColor = "rgba(255,255,255,0.8)";
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(text, canvasW / 2, y);
+
+    // Outline
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    ctx.lineWidth = 2;
+    ctx.strokeText(text, canvasW / 2, y);
+
+    ctx.restore();
   }
 
   private drawGridLines(ctx: CanvasRenderingContext2D): void {
@@ -868,7 +1270,7 @@ export class BoardRenderer {
 
         // Skip orbs for cells that are in charge/scatter phase of explosion
         const isExpSource = this.explosionQueue.some(
-          (e) => e.row === r && e.col === c && e.active && e.elapsed < 0.26,
+          (e) => e.row === r && e.col === c && e.active && e.elapsed < 0.15,
         );
 
         if (cell && cell.orbs > 0 && !isExpSource) {
@@ -1204,16 +1606,18 @@ export class BoardRenderer {
       const cx = cellX + cs / 2;
       const cy = cellY + cs / 2;
 
-      // ── Phase 1: Charge (0–80ms) ──
-      if (exp.elapsed < 0.08) {
-        const t = exp.elapsed / 0.08;
+      // ── Phase 1: Charge (0–60ms) ──
+      if (exp.elapsed < 0.06) {
+        const t = exp.elapsed / 0.06;
 
-        // Cell background flash: 0→1 over 30ms, 1→0 over 30ms
+        // Cell background flash: 0→1 over 20ms, 1→0 over 20ms
         let flashAlpha: number;
-        if (exp.elapsed < 0.03) {
-          flashAlpha = exp.elapsed / 0.03;
+        if (exp.elapsed < 0.02) {
+          flashAlpha = exp.elapsed / 0.02;
+        } else if (exp.elapsed < 0.04) {
+          flashAlpha = 1 - (exp.elapsed - 0.02) / 0.02;
         } else {
-          flashAlpha = 1 - (exp.elapsed - 0.03) / 0.03;
+          flashAlpha = 0;
         }
         ctx.save();
         ctx.globalAlpha = clamp01(flashAlpha);
@@ -1263,10 +1667,10 @@ export class BoardRenderer {
         }
       }
 
-      // ── Phase 2: Scatter (80ms–430ms, 350ms duration) ──
-      if (exp.elapsed >= 0.08 && exp.elapsed < 0.43) {
-        // Source cell: scale snaps back (1.12 → 0.9 → 1.0 over 80ms)
-        const releaseT = clamp01((exp.elapsed - 0.08) / 0.08);
+      // ── Phase 2: Scatter (60ms–210ms, 150ms duration) ──
+      if (exp.elapsed >= 0.06 && exp.elapsed < 0.21) {
+        // Source cell: scale snaps back (1.12 → 0.9 → 1.0 over 60ms)
+        const releaseT = clamp01((exp.elapsed - 0.06) / 0.06);
         if (releaseT < 0.5) {
           // Fade source cell background from player color → transparent
           const fadeAlpha = 0.3 * (1 - releaseT * 2);
@@ -1340,12 +1744,14 @@ export class BoardRenderer {
   }
 
   hasActiveExplosions(): boolean {
-    return this.explosionQueue.length > 0;
+    return this.explosionQueue.length > 0 || this.isChainAnimating_;
   }
 
   destroy(): void {
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
+    if (this.chainAnimTimer) clearTimeout(this.chainAnimTimer);
     window.removeEventListener("resize", this.resizeHandler);
+    this.abortChainAnimation();
     this.particles.clear();
     this.screenShaker.clear();
   }

@@ -88,14 +88,14 @@ export function Lobby() {
 
               <Button
                 onClick={() => setMode("create")}
-                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold shadow-lg shadow-blue-400 hover:shadow-blue-500 transition-all"
+                className="w-full bg-linear-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold shadow-lg shadow-blue-400 hover:shadow-blue-500 transition-all"
               >
                 CREATE ROOM
               </Button>
 
               <Button
                 onClick={() => setMode("join")}
-                className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold shadow-lg shadow-purple-400 hover:shadow-purple-500 transition-all"
+                className="w-full bg-linear-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold shadow-lg shadow-purple-400 hover:shadow-purple-500 transition-all"
               >
                 JOIN ROOM
               </Button>
@@ -134,7 +134,7 @@ export function Lobby() {
                       disabled={isLoading}
                       className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
                         maxPlayers === count
-                          ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white ring-2 ring-blue-300 shadow-lg shadow-blue-400"
+                          ? "bg-linear-to-r from-blue-500 to-blue-600 text-white ring-2 ring-blue-300 shadow-lg shadow-blue-400"
                           : "bg-blue-50 text-gray-700 border border-blue-300 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-200"
                       }`}
                     >
@@ -231,7 +231,7 @@ export function Lobby() {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold shadow-lg shadow-purple-400 hover:shadow-purple-500 transition-all disabled:opacity-50"
+                className="w-full bg-linear-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold shadow-lg shadow-purple-400 hover:shadow-purple-500 transition-all disabled:opacity-50"
               >
                 {isLoading ? "CONNECTING..." : "JOIN ROOM"}
               </Button>

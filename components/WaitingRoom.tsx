@@ -149,7 +149,7 @@ export function WaitingRoom() {
               disabled={!readyToStart}
               className={`w-full mb-4 font-bold shadow-lg transition-all ${
                 readyToStart
-                  ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-green-400 hover:shadow-green-500"
+                  ? "bg-linear-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-green-400 hover:shadow-green-500"
                   : "bg-gray-200 text-gray-400 cursor-not-allowed"
               }`}
             >
@@ -192,7 +192,7 @@ function PlayerCard({
       }}
     >
       <div
-        className="w-4 h-4 rounded-full flex-shrink-0"
+        className="w-4 h-4 rounded-full shrink-0"
         style={{ backgroundColor: hex }}
       />
       <div className="flex-1 min-w-0">

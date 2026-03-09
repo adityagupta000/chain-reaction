@@ -40,7 +40,7 @@ export function GameOver() {
         <div className="p-8 text-center">
           {isDraw ? (
             <>
-              <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-yellow-600 mb-4">
+              <h1 className="text-4xl font-black text-transparent bg-clip-text bg-linear-to-r from-yellow-500 to-yellow-600 mb-4">
                 IT'S A DRAW!
               </h1>
               <p className="text-gray-700 mb-8 font-semibold">
@@ -49,7 +49,7 @@ export function GameOver() {
             </>
           ) : (
             <>
-              <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-orange-500 mb-4">
+              <h1 className="text-4xl font-black text-transparent bg-clip-text bg-linear-to-r from-yellow-500 to-orange-500 mb-4">
                 🏆 {ranked[0]?.name.toUpperCase()} WINS! 🏆
               </h1>
               <p className="text-gray-700 mb-8 font-semibold">
@@ -79,7 +79,7 @@ export function GameOver() {
 
           <Button
             onClick={handlePlayAgain}
-            className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold shadow-lg shadow-blue-400 hover:shadow-blue-500 transition-all"
+            className="w-full bg-linear-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold shadow-lg shadow-blue-400 hover:shadow-blue-500 transition-all"
           >
             PLAY AGAIN
           </Button>
@@ -114,7 +114,7 @@ function ScoreRow({
       }}
     >
       <div className="flex items-center gap-3">
-      <span className="text-slate-500 text-sm w-5">#{rank}</span>
+        <span className="text-slate-500 text-sm w-5">#{rank}</span>
         <div
           className="w-3 h-3 rounded-full"
           style={{ backgroundColor: hex }}

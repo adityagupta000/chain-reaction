@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 // Simplified sound system using Web Audio API
 // In production, you'd use Howler.js or similar for better audio management
@@ -9,12 +9,13 @@ export class SoundManager {
   private sounds = new Map<string, AudioBuffer>();
 
   constructor() {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       try {
-        this.audioContext =
-          new (window.AudioContext || (window as any).webkitAudioContext)();
+        this.audioContext = new (
+          window.AudioContext || (window as any).webkitAudioContext
+        )();
       } catch {
-        console.warn('[SoundManager] Web Audio API not supported');
+        console.warn("[SoundManager] Web Audio API not supported");
       }
     }
   }
@@ -30,7 +31,7 @@ export class SoundManager {
   playTone(
     frequency: number = 400,
     duration: number = 100,
-    type: OscillatorType = 'sine'
+    type: OscillatorType = "sine",
   ): void {
     if (!this.enabled || !this.audioContext) return;
 
@@ -55,45 +56,55 @@ export class SoundManager {
       osc.start(now);
       osc.stop(now + oscDuration);
     } catch (error) {
-      console.warn('[SoundManager] Error playing tone:', error);
+      console.warn("[SoundManager] Error playing tone:", error);
     }
   }
 
   // Sound effects
   orbClick(): void {
-    this.playTone(800, 80, 'square');
+    this.playTone(800, 80, "square");
   }
 
   explosion(): void {
-    this.playTone(200, 300, 'sine');
-    setTimeout(() => this.playTone(150, 200, 'sine'), 100);
+    this.playTone(200, 300, "sine");
+    setTimeout(() => this.playTone(150, 200, "sine"), 100);
+  }
+
+  /** Explosion tone with pitch escalation for chain reactions */
+  explosionAtPitch(stepIndex: number): void {
+    const pitch = Math.min(2.0, 1.0 + stepIndex * 0.08);
+    if (stepIndex === 0) {
+      this.playTone(200 * pitch, 120, "sine");
+    } else {
+      this.playTone(400 * pitch, 100, "sine");
+    }
   }
 
   chainReaction(): void {
     for (let i = 0; i < 3; i++) {
       setTimeout(() => {
-        this.playTone(400 + i * 100, 150, 'sine');
+        this.playTone(400 + i * 100, 150, "sine");
       }, i * 100);
     }
   }
 
   turnChange(): void {
-    this.playTone(500, 100, 'sine');
-    setTimeout(() => this.playTone(600, 100, 'sine'), 100);
+    this.playTone(500, 100, "sine");
+    setTimeout(() => this.playTone(600, 100, "sine"), 100);
   }
 
   gameOver(): void {
-    this.playTone(500, 200, 'sine');
-    setTimeout(() => this.playTone(400, 200, 'sine'), 200);
-    setTimeout(() => this.playTone(300, 300, 'sine'), 400);
+    this.playTone(500, 200, "sine");
+    setTimeout(() => this.playTone(400, 200, "sine"), 200);
+    setTimeout(() => this.playTone(300, 300, "sine"), 400);
   }
 
   buttonClick(): void {
-    this.playTone(600, 50, 'square');
+    this.playTone(600, 50, "square");
   }
 
   destroy(): void {
-    if (this.audioContext && this.audioContext.state !== 'closed') {
+    if (this.audioContext && this.audioContext.state !== "closed") {
       this.audioContext.close();
     }
   }
@@ -103,7 +114,7 @@ export class SoundManager {
 let soundManager: SoundManager | null = null;
 
 export function getSoundManager(): SoundManager {
-  if (!soundManager && typeof window !== 'undefined') {
+  if (!soundManager && typeof window !== "undefined") {
     soundManager = new SoundManager();
   }
   return soundManager || new SoundManager();

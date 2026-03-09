@@ -138,33 +138,28 @@ export function useSocket() {
           "game:moveResult",
           (data: {
             boardState: BoardState;
+            move: { row: number; col: number; playerIndex: number };
             scores: Record<string, number>;
             explosionSequence: any[];
             eliminatedPlayers: number[];
             winner: any | null;
           }) => {
-            console.log("[Socket] Move result received");
+            console.log(
+              "[Socket] Move result received, chain length:",
+              data.explosionSequence.length,
+            );
 
-            // Step 1: Store pending board state (don't apply yet)
-            useGameStore.getState().setBoardState(data.boardState);
+            // Push to queue — the renderer will animate and apply each in order
+            useGameStore.getState().pushPendingMoveResult({
+              boardState: data.boardState,
+              move: data.move,
+              explosionSequence: data.explosionSequence,
+              scores: data.scores,
+              eliminatedPlayers: data.eliminatedPlayers,
+              winner: data.winner,
+            });
             useGameStore.getState().clearSelection();
             useGameStore.getState().setSubmittingMove(false);
-
-            // Step 2: If game is finished, set pending game finish data
-            if (data.winner) {
-              useGameStore.getState().setPendingGameFinish({
-                outcome: "win",
-                winner: data.winner,
-              });
-            }
-
-            // Step 3: Handle eliminations
-            if (data.eliminatedPlayers.length > 0) {
-              console.log(
-                "[Socket] Eliminated players:",
-                data.eliminatedPlayers,
-              );
-            }
           },
         );
 

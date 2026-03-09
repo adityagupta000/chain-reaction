@@ -19,17 +19,26 @@ interface Confetto {
 }
 
 const COLORS = [
-  "#FF4444", "#4488FF", "#44FF88", "#FFD700",
-  "#CC44FF", "#FF8844", "#00FFFF", "#FF00CC",
-  "#66FF66", "#FF6699", "#FFFFFF", "#AAD4FF",
+  "#FF4444",
+  "#4488FF",
+  "#44FF88",
+  "#FFD700",
+  "#CC44FF",
+  "#FF8844",
+  "#00FFFF",
+  "#FF00CC",
+  "#66FF66",
+  "#FF6699",
+  "#FFFFFF",
+  "#AAD4FF",
 ];
 
-const BURST_COUNT = 6;
-const BURST_INTERVAL = 800;
-const PIECES_PER_BURST = 60;
+const SPAWN_RATE = 3; // new confetti pieces per frame
 
 function createConfetto(canvasW: number): Confetto {
-  const shape = (["rect", "circle", "strip"] as const)[Math.floor(Math.random() * 3)];
+  const shape = (["rect", "circle", "strip"] as const)[
+    Math.floor(Math.random() * 3)
+  ];
   return {
     x: Math.random() * canvasW,
     y: -(Math.random() * 40 + 10),
@@ -62,28 +71,14 @@ export function Confetti() {
     canvas.height = window.innerHeight;
 
     const confetti: Confetto[] = [];
-    let burstsLeft = BURST_COUNT;
-
-    // Initial burst
-    for (let i = 0; i < PIECES_PER_BURST; i++) {
-      confetti.push(createConfetto(canvas.width));
-    }
-    burstsLeft--;
-
-    // Staggered bursts
-    const burstTimers: ReturnType<typeof setTimeout>[] = [];
-    for (let b = 1; b <= burstsLeft; b++) {
-      burstTimers.push(
-        setTimeout(() => {
-          for (let i = 0; i < PIECES_PER_BURST; i++) {
-            confetti.push(createConfetto(canvas.width));
-          }
-        }, b * BURST_INTERVAL),
-      );
-    }
 
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Continuously spawn new pieces every frame
+      for (let i = 0; i < SPAWN_RATE; i++) {
+        confetti.push(createConfetto(canvas.width));
+      }
 
       for (let i = confetti.length - 1; i >= 0; i--) {
         const c = confetti[i];
@@ -98,7 +93,10 @@ export function Confetti() {
 
         // Fade out near bottom
         if (c.y > canvas.height * 0.75) {
-          c.opacity = Math.max(0, 1 - (c.y - canvas.height * 0.75) / (canvas.height * 0.25));
+          c.opacity = Math.max(
+            0,
+            1 - (c.y - canvas.height * 0.75) / (canvas.height * 0.25),
+          );
         }
 
         // Draw
@@ -124,9 +122,8 @@ export function Confetti() {
         }
       }
 
-      if (confetti.length > 0) {
-        animationRef.current = requestAnimationFrame(animate);
-      }
+      // Always keep animating (continuous confetti)
+      animationRef.current = requestAnimationFrame(animate);
     };
 
     animationRef.current = requestAnimationFrame(animate);
@@ -139,7 +136,6 @@ export function Confetti() {
 
     return () => {
       window.removeEventListener("resize", handleResize);
-      burstTimers.forEach(clearTimeout);
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }

@@ -31,25 +31,32 @@ export function GameCanvas({
   const room = useRoom();
   const selectedCell = useSelectedCell();
   const isSubmittingMove = useIsSubmittingMove();
+  const isAnimating = useGameStore((s) => s.isAnimating);
+  const pendingMoveQueue = useGameStore((s) => s.pendingMoveQueue);
   const gameError = useGameStore((s) => s.error);
   const { submitMove } = useSocketEmit();
 
   const [turnWarning, setTurnWarning] = useState(false);
   const [errorWarning, setErrorWarning] = useState(false);
+  const [chainCount, setChainCount] = useState(0);
+  const [eliminationMsg, setEliminationMsg] = useState<string | null>(null);
   const turnWarningTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const errorWarningTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const eliminationTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const lastErrorRef = useRef<string>("");
 
   // Keep latest values in refs so click handler never goes stale
   const isMyTurnRef = useRef(isMyTurn);
   const boardStateRef = useRef(boardState);
   const isSubmittingRef = useRef(isSubmittingMove);
+  const isAnimatingRef = useRef(isAnimating);
   const playerIdRef = useRef(playerId);
   const roomIdRef = useRef(roomId);
 
   isMyTurnRef.current = isMyTurn;
   boardStateRef.current = boardState;
   isSubmittingRef.current = isSubmittingMove;
+  isAnimatingRef.current = isAnimating;
   playerIdRef.current = playerId;
   roomIdRef.current = roomId;
 
@@ -69,41 +76,6 @@ export function GameCanvas({
     }
   }, [gameError]);
 
-  // Handle delayed game finish (wait for explosions to complete)
-  useEffect(() => {
-    const pendingFinish = useGameStore.getState().pendingGameFinish;
-    if (!pendingFinish || !rendererRef.current) return;
-
-    // Check if explosions are still active
-    if (rendererRef.current.hasActiveExplosions()) {
-      // Still animating - check again soon
-      const timer = setTimeout(() => {
-        // This will be called repeatedly until explosions are done
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-
-    // Explosions are done - now transition to gameover
-    useGameStore.getState().setPhase("gameover");
-    useGameStore.getState().setPendingGameFinish(null);
-  }, []);
-
-  // Check pending finish status continuously while playing
-  useEffect(() => {
-    if (!rendererRef.current) return;
-
-    const checkFinish = () => {
-      const pendingFinish = useGameStore.getState().pendingGameFinish;
-      if (pendingFinish && !rendererRef.current?.hasActiveExplosions()) {
-        useGameStore.getState().setPhase("gameover");
-        useGameStore.getState().setPendingGameFinish(null);
-      }
-    };
-
-    const interval = setInterval(checkFinish, 50);
-    return () => clearInterval(interval);
-  }, []);
-
   // Initialize renderer ONCE (only re-create if grid size changes)
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -117,6 +89,74 @@ export function GameCanvas({
     };
   }, [gridRows, gridCols]);
 
+  // ── CHAIN ANIMATION: consume from pendingMoveQueue ──
+  useEffect(() => {
+    const pending = pendingMoveQueue[0];
+    if (!pending || !rendererRef.current || !boardState || !room?.players)
+      return;
+    if (rendererRef.current.isChainAnimating) return; // wait for current animation
+
+    const renderer = rendererRef.current;
+    const preMoveGrid = boardState.grid;
+
+    useGameStore.getState().setAnimating(true);
+    setChainCount(0);
+
+    renderer.startChainAnimation(
+      preMoveGrid,
+      pending.move.row,
+      pending.move.col,
+      pending.move.playerIndex,
+      pending.explosionSequence,
+      pending.boardState.grid,
+      room.players,
+      // onChainStep
+      (step: number) => {
+        setChainCount(step);
+      },
+      // onElimination
+      (playerIndex: number) => {
+        const eliminatedPlayer = room.players[playerIndex];
+        if (eliminatedPlayer) {
+          setEliminationMsg(`${eliminatedPlayer.name} eliminated!`);
+          if (eliminationTimer.current) clearTimeout(eliminationTimer.current);
+          eliminationTimer.current = setTimeout(
+            () => setEliminationMsg(null),
+            1500,
+          );
+        }
+      },
+      // onComplete
+      () => {
+        // Apply final board state and remove from queue
+        useGameStore.getState().setBoardState(pending.boardState);
+        useGameStore.getState().shiftPendingMoveQueue();
+        setChainCount(0);
+
+        // Handle game over with celebration delay
+        if (pending.winner) {
+          renderer.triggerVictoryFlash();
+          useGameStore.getState().setAnimating(false);
+          useGameStore.getState().setPendingGameFinish({
+            outcome: "win",
+            winner: pending.winner,
+          });
+          setTimeout(() => {
+            useGameStore.getState().setPhase("gameover");
+            useGameStore.getState().setPendingGameFinish(null);
+          }, 1500);
+        } else {
+          // Check if there are more queued results — if not, stop animating
+          const remaining = useGameStore.getState().pendingMoveQueue;
+          if (remaining.length === 0) {
+            useGameStore.getState().setAnimating(false);
+          }
+          // If there ARE more, the effect will re-fire because queue changed
+        }
+      },
+    );
+  }, [pendingMoveQueue.length, boardState]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Click handler — uses refs so it never goes stale
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -126,6 +166,7 @@ export function GameCanvas({
       if (
         !boardStateRef.current ||
         isSubmittingRef.current ||
+        isAnimatingRef.current ||
         !rendererRef.current
       )
         return;
@@ -162,6 +203,7 @@ export function GameCanvas({
       canvas.removeEventListener("click", handleCanvasClick);
       if (turnWarningTimer.current) clearTimeout(turnWarningTimer.current);
       if (errorWarningTimer.current) clearTimeout(errorWarningTimer.current);
+      if (eliminationTimer.current) clearTimeout(eliminationTimer.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -172,9 +214,10 @@ export function GameCanvas({
     ? `${selectedCell[0]},${selectedCell[1]}`
     : null;
 
-  // Unified effect: set grid color and render board
+  // Unified effect: set grid color and render board (only when NOT animating)
   useEffect(() => {
     if (!boardState || !rendererRef.current || !room?.players) return;
+    if (rendererRef.current.isChainAnimating) return; // don't push grid during animation
 
     // Set grid color based on current turn player
     if (currentTurnPlayerColor) {
@@ -195,6 +238,7 @@ export function GameCanvas({
     selectedCellKey,
     boardState?.grid.length,
     room?.players.length,
+    isAnimating,
   ]);
 
   return (
@@ -203,7 +247,10 @@ export function GameCanvas({
         ref={canvasRef}
         className="w-full h-full"
         style={{
-          cursor: isMyTurn && !isSubmittingMove ? "pointer" : "default",
+          cursor:
+            isMyTurn && !isSubmittingMove && !isAnimating
+              ? "pointer"
+              : "default",
           opacity: isSubmittingMove ? 0.7 : 1,
         }}
       />
@@ -223,6 +270,13 @@ export function GameCanvas({
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
           <div className="bg-red-600/40 text-red-50 px-6 py-3 rounded-lg font-semibold text-sm shadow-lg backdrop-blur-md border border-red-500/30">
             {gameError}
+          </div>
+        </div>
+      )}
+      {eliminationMsg && (
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+          <div className="bg-red-900/80 text-red-100 px-8 py-4 rounded-xl font-bold text-lg shadow-2xl backdrop-blur-sm border border-red-500/40">
+            {eliminationMsg}
           </div>
         </div>
       )}

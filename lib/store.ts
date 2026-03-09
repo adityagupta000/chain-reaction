@@ -10,6 +10,7 @@ import type {
   GameMove,
   AnimationFrame,
   ChatMessage,
+  MoveResultPayload,
 } from "./types";
 
 interface GameStore extends ClientGameState {
@@ -33,6 +34,11 @@ interface GameStore extends ClientGameState {
 
   // Animation
   setPendingAnimation: (animation: AnimationFrame | null) => void;
+  setPendingMoveResult: (data: MoveResultPayload | null) => void;
+  pushPendingMoveResult: (data: MoveResultPayload) => void;
+  shiftPendingMoveQueue: () => void;
+  setAnimating: (animating: boolean) => void;
+  setChainCount: (count: number) => void;
 
   // Game finish
   setPendingGameFinish: (
@@ -56,6 +62,10 @@ const initialState: ClientGameState = {
   currentPlayer: null,
   boardState: null,
   pendingAnimation: null,
+  pendingMoveResult: null,
+  pendingMoveQueue: [],
+  isAnimating: false,
+  chainCount: 0,
   gameHistory: [],
   error: null,
   selectedCell: null,
@@ -98,6 +108,22 @@ export const useGameStore = create<GameStore>((set) => ({
   clearHistory: () => set({ gameHistory: [] }),
 
   setPendingAnimation: (animation) => set({ pendingAnimation: animation }),
+
+  setPendingMoveResult: (data) => set({ pendingMoveResult: data }),
+
+  pushPendingMoveResult: (data) =>
+    set((state) => ({
+      pendingMoveQueue: [...state.pendingMoveQueue, data],
+    })),
+
+  shiftPendingMoveQueue: () =>
+    set((state) => ({
+      pendingMoveQueue: state.pendingMoveQueue.slice(1),
+    })),
+
+  setAnimating: (animating) => set({ isAnimating: animating }),
+
+  setChainCount: (count) => set({ chainCount: count }),
 
   setPendingGameFinish: (data) => set({ pendingGameFinish: data }),
 

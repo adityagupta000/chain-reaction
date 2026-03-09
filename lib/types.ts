@@ -5,6 +5,21 @@
 export type GamePhase = "lobby" | "waiting" | "playing" | "gameover";
 export type PlayerRole = "host" | "guest";
 export type GameOutcome = "win" | "loss" | "draw";
+export type AnimationPhase =
+  | "idle"
+  | "orb_placement"
+  | "exploding"
+  | "settling"
+  | "turn_transition";
+
+export interface MoveResultPayload {
+  boardState: BoardState;
+  move: { row: number; col: number; playerIndex: number };
+  explosionSequence: ExplosionStep[];
+  scores: Record<string, number>;
+  eliminatedPlayers: number[];
+  winner: Player | null;
+}
 
 export type PlayerColor = "blue" | "red" | "green" | "yellow" | "purple";
 
@@ -104,6 +119,10 @@ export interface ClientGameState {
   currentPlayer: Player | null;
   boardState: BoardState | null;
   pendingAnimation: AnimationFrame | null;
+  pendingMoveResult: MoveResultPayload | null;
+  pendingMoveQueue: MoveResultPayload[];
+  isAnimating: boolean;
+  chainCount: number;
   gameHistory: GameMove[];
   error: string | null;
   selectedCell: [number, number] | null;

@@ -24,18 +24,29 @@ import {
 } from "../lib/gameEngine";
 import { nanoid } from "nanoid";
 
-const VALID_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "purple"];
+const VALID_COLORS: PlayerColor[] = [
+  "blue",
+  "red",
+  "green",
+  "yellow",
+  "purple",
+];
 const MAX_NAME_LENGTH = 20;
 const MAX_ROOM_NAME_LENGTH = 30;
 const MAX_CHAT_LENGTH = 200;
 const MOVE_COOLDOWN_MS = 100; // minimum ms between moves per player
 
 function sanitize(str: string): string {
-  return str.replace(/[<>&"'/]/g, "").trim().slice(0, MAX_NAME_LENGTH);
+  return str
+    .replace(/[<>&"'/]/g, "")
+    .trim()
+    .slice(0, MAX_NAME_LENGTH);
 }
 
 function isValidColor(color: unknown): color is PlayerColor {
-  return typeof color === "string" && VALID_COLORS.includes(color as PlayerColor);
+  return (
+    typeof color === "string" && VALID_COLORS.includes(color as PlayerColor)
+  );
 }
 
 const app = express();
@@ -168,7 +179,10 @@ io.on("connection", (socket) => {
       const gridRows = Math.min(15, Math.max(3, data.gridRows || 9));
       const gridCols = Math.min(15, Math.max(3, data.gridCols || 6));
 
-      const roomName = sanitize(data.roomName || "").slice(0, MAX_ROOM_NAME_LENGTH);
+      const roomName = sanitize(data.roomName || "").slice(
+        0,
+        MAX_ROOM_NAME_LENGTH,
+      );
       if (roomName.length === 0) {
         socket.emit("error", { message: "Room name cannot be empty" });
         return;
@@ -240,7 +254,9 @@ io.on("connection", (socket) => {
 
       // Check color availability
       const takenColors = getTakenColors(room);
-      let chosenColor: PlayerColor = isValidColor(data.color) ? data.color : "red";
+      let chosenColor: PlayerColor = isValidColor(data.color)
+        ? data.color
+        : "red";
 
       if (takenColors.includes(chosenColor)) {
         // Auto-pick first available color
@@ -263,7 +279,10 @@ io.on("connection", (socket) => {
         });
       }
 
-      const guestName = sanitize(data.playerName || "").slice(0, MAX_NAME_LENGTH);
+      const guestName = sanitize(data.playerName || "").slice(
+        0,
+        MAX_NAME_LENGTH,
+      );
       if (guestName.length === 0) {
         socket.emit("error", { message: "Player name cannot be empty" });
         return;
@@ -356,11 +375,7 @@ io.on("connection", (socket) => {
     }
 
     room.status = "playing";
-    room.boardState = createBoardState(
-      0,
-      room.gridRows,
-      room.gridCols,
-    );
+    room.boardState = createBoardState(0, room.gridRows, room.gridCols);
     // Initialize scores for all players
     for (const player of room.players) {
       room.boardState.scores[player.id] = 0;
@@ -473,6 +488,7 @@ io.on("connection", (socket) => {
       await saveRoom(room);
       io.to(data.roomId).emit("game:moveResult", {
         boardState,
+        move: { row: move.row, col: move.col, playerIndex },
         explosionSequence: result.explosionSequence,
         scores: boardState.scores,
         eliminatedPlayers,
@@ -486,6 +502,7 @@ io.on("connection", (socket) => {
       await saveRoom(room);
       io.to(data.roomId).emit("game:moveResult", {
         boardState,
+        move: { row: move.row, col: move.col, playerIndex },
         explosionSequence: result.explosionSequence,
         scores: boardState.scores,
         eliminatedPlayers,
@@ -557,6 +574,7 @@ io.on("connection", (socket) => {
           const winner = room.players[0] || null;
           io.to(roomId).emit("game:moveResult", {
             boardState: room.boardState,
+            move: { row: 0, col: 0, playerIndex: 0 },
             explosionSequence: [],
             scores: room.boardState.scores,
             eliminatedPlayers: [],
