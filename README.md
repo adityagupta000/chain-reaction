@@ -44,30 +44,30 @@ If no server is running, the game automatically falls back to offline mode with 
 
 All detailed documentation lives in the [`docs/`](./docs/) folder:
 
-| Document | Description |
-|---|---|
-| [docs/README.md](./docs/README.md) | Project overview and structure |
-| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | System architecture, data flow, tech decisions |
-| [docs/GAME_ENGINE.md](./docs/GAME_ENGINE.md) | Game logic, chain reactions, scoring, elimination |
-| [docs/RENDERING.md](./docs/RENDERING.md) | Canvas rendering engine, orb visuals, explosions |
-| [docs/NETWORKING.md](./docs/NETWORKING.md) | Socket.io events, room system, mock socket |
-| [docs/COMPONENTS.md](./docs/COMPONENTS.md) | React components and their props |
-| [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | Complete function, hook, and event API |
-| [docs/SETUP_AND_DEPLOYMENT.md](./docs/SETUP_AND_DEPLOYMENT.md) | Installation, env vars, deployment |
-| [docs/CHANGELOG.md](./docs/CHANGELOG.md) | Version history and recent changes |
+| Document                                                       | Description                                       |
+| -------------------------------------------------------------- | ------------------------------------------------- |
+| [docs/README.md](./docs/README.md)                             | Project overview and structure                    |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)                 | System architecture, data flow, tech decisions    |
+| [docs/GAME_ENGINE.md](./docs/GAME_ENGINE.md)                   | Game logic, chain reactions, scoring, elimination |
+| [docs/RENDERING.md](./docs/RENDERING.md)                       | Canvas rendering engine, orb visuals, explosions  |
+| [docs/NETWORKING.md](./docs/NETWORKING.md)                     | Socket.io events, room system, mock socket        |
+| [docs/COMPONENTS.md](./docs/COMPONENTS.md)                     | React components and their props                  |
+| [docs/API_REFERENCE.md](./docs/API_REFERENCE.md)               | Complete function, hook, and event API            |
+| [docs/SETUP_AND_DEPLOYMENT.md](./docs/SETUP_AND_DEPLOYMENT.md) | Installation, env vars, deployment                |
+| [docs/CHANGELOG.md](./docs/CHANGELOG.md)                       | Version history and recent changes                |
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16.1.6, React 19, TypeScript 5.7 |
-| Rendering | Canvas 2D API (custom `BoardRenderer`) |
-| State | Zustand 4 |
-| Networking | Socket.io 4 (client + server) |
-| Server | Express 4, Node.js |
+| Layer       | Technology                                |
+| ----------- | ----------------------------------------- |
+| Framework   | Next.js 16.1.6, React 19, TypeScript 5.7  |
+| Rendering   | Canvas 2D API (custom `BoardRenderer`)    |
+| State       | Zustand 4                                 |
+| Networking  | Socket.io 4 (client + server)             |
+| Server      | Express 4, Node.js                        |
 | Persistence | Redis (ioredis 5) with in-memory fallback |
-| Styling | Tailwind CSS 4, shadcn/ui |
-| Audio | Web Audio API (synthesized tones) |
+| Styling     | Tailwind CSS 4, shadcn/ui                 |
+| Audio       | Web Audio API (synthesized tones)         |
 
 ## Scripts
 
@@ -92,15 +92,6 @@ chain-reaction/
 ├── docs/                   # Full documentation
 └── public/                 # Static assets
 ```
-
-## License
-
-MIT
-✅ **Secure** - Server-side validation
-✅ **Performant** - 60fps rendering
-✅ **Real Multiplayer** - Actual game logic
-✅ **Beautiful** - Modern dark theme
-✅ **Sound** - Web Audio effects
 
 ## Getting Help
 
@@ -138,6 +129,7 @@ Feel free to extend and modify! Some ideas:
 ## Questions?
 
 All code is well-documented. Start with:
+
 1. `START_HERE.md` - Overview
 2. `QUICK_START.md` - Quick reference
 3. `API_DOCS.md` - Code API
@@ -148,5 +140,3 @@ All code is well-documented. Start with:
 **Ready to play? Start with `pnpm install && pnpm run dev:both`**
 
 Then open [START_HERE.md](./START_HERE.md) for next steps!
-
-**Made with ❤️ using Next.js, React, and Socket.io**

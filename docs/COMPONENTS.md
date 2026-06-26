@@ -16,12 +16,12 @@ The root game component. Acts as a **phase router** — renders different compon
 
 ### Phase Routing
 
-| Phase | Rendered Component |
-|---|---|
-| `lobby` | `<Lobby />` |
-| `waiting` | `<WaitingRoom />` |
-| `playing` | `<GameHUD />` + `<GameCanvas />` |
-| `gameover` | `<GameOver />` |
+| Phase      | Rendered Component               |
+| ---------- | -------------------------------- |
+| `lobby`    | `<Lobby />`                      |
+| `waiting`  | `<WaitingRoom />`                |
+| `playing`  | `<GameHUD />` + `<GameCanvas />` |
+| `gameover` | `<GameOver />`                   |
 
 ### Loading State
 
@@ -132,6 +132,7 @@ If it's not the player's turn, shows a "Not your turn!" toast for 1.5s instead.
 ### Pending Game Finish
 
 Polls every 50ms via `setInterval`:
+
 1. Checks `useGameStore.getState().pendingGameFinish`
 2. Checks `rendererRef.current.hasActiveExplosions()`
 3. When pending finish exists AND no active explosions → transitions to `gameover`

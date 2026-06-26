@@ -530,17 +530,12 @@ export class BoardRenderer {
         });
       }
 
-      // Screen shake based on chain length
+      // Visual effects based on chain length (no screen shake)
       const chainLen = exploded.length;
-      if (chainLen >= 3 && chainLen <= 5) {
-        this.screenShaker.addShake(3, 200);
-      } else if (chainLen >= 6 && chainLen <= 10) {
-        this.screenShaker.addShake(6, 300);
-        // Vignette pulse on screen edges
+      if (chainLen >= 6 && chainLen <= 10) {
         this.vignetteAlpha = 0.35;
         this.vignetteDecay = 0.35 / 0.4;
       } else if (chainLen >= 11) {
-        this.screenShaker.addShake(12, 500);
         this.flashOverlayAlpha = 0.18;
         this.flashOverlayDecay = 0.18 / 0.4;
         this.vignetteAlpha = 0.5;
@@ -707,7 +702,7 @@ export class BoardRenderer {
     // Start first explosion step after a short delay for orb placement
     this.chainAnimTimer = setTimeout(() => {
       this.queueChainStep(0);
-    }, 100);
+    }, 200);
   }
 
   private queueChainStep(stepIndex: number): void {
@@ -762,13 +757,7 @@ export class BoardRenderer {
       soundPlayed: false,
     });
 
-    // Screen shake scaled to chain length
-    const shakeIntensity = this.getChainShakeIntensity(stepIndex + 1);
-    if (shakeIntensity > 0) {
-      this.screenShaker.addShake(shakeIntensity, 200 + stepIndex * 10);
-    }
-
-    // Visual effects for longer chains
+    // Visual effects for longer chains (no screen shake)
     if (stepIndex >= 5 && stepIndex < 10) {
       this.vignetteAlpha = Math.max(this.vignetteAlpha, 0.35);
       this.vignetteDecay = 0.35 / 0.4;
@@ -789,7 +778,7 @@ export class BoardRenderer {
       const elimination = this.chainEliminations.find(
         (e) => e.stepIndex === stepIndex,
       );
-      const delay = elimination ? 520 : 120;
+      const delay = elimination ? 800 : 300;
 
       if (elimination && this.onEliminationCallback) {
         this.onEliminationCallback(elimination.playerIndex);
@@ -1006,9 +995,9 @@ export class BoardRenderer {
         getSoundManager().explosionAtPitch(exp.chainIndex);
       }
 
-      // Phase 1: Charge (0–60ms)
-      if (exp.elapsed < 0.06) {
-        const t = exp.elapsed / 0.06;
+      // Phase 1: Charge (0–120ms)
+      if (exp.elapsed < 0.12) {
+        const t = exp.elapsed / 0.12;
         exp.ringRadius = t * this.cellSize * 0.7;
 
         // Override cell spin to fast blur
@@ -1019,16 +1008,16 @@ export class BoardRenderer {
         }
       }
 
-      // Phase 2: Scatter (60ms–210ms, 150ms duration)
-      if (exp.elapsed >= 0.06 && exp.elapsed < 0.21) {
-        const scatterT = clamp01((exp.elapsed - 0.06) / 0.15);
+      // Phase 2: Scatter (120ms–420ms, 300ms duration)
+      if (exp.elapsed >= 0.12 && exp.elapsed < 0.42) {
+        const scatterT = clamp01((exp.elapsed - 0.12) / 0.3);
         for (const f of exp.flights) {
           f.progress = scatterT;
         }
       }
 
-      // Phase 3: Impact (starts at 210ms)
-      if (exp.elapsed >= 0.21 && !exp.impactHandled) {
+      // Phase 3: Impact (starts at 420ms)
+      if (exp.elapsed >= 0.42 && !exp.impactHandled) {
         exp.impactHandled = true;
 
         // During chain animation, advance the visual board to post-step state
@@ -1068,8 +1057,8 @@ export class BoardRenderer {
         }
       }
 
-      // Done after 310ms
-      if (exp.elapsed >= 0.31) {
+      // Done after 520ms
+      if (exp.elapsed >= 0.52) {
         exp.done = true;
       }
     }
@@ -1270,7 +1259,7 @@ export class BoardRenderer {
 
         // Skip orbs for cells that are in charge/scatter phase of explosion
         const isExpSource = this.explosionQueue.some(
-          (e) => e.row === r && e.col === c && e.active && e.elapsed < 0.15,
+          (e) => e.row === r && e.col === c && e.active && e.elapsed < 0.3,
         );
 
         if (cell && cell.orbs > 0 && !isExpSource) {
@@ -1606,16 +1595,16 @@ export class BoardRenderer {
       const cx = cellX + cs / 2;
       const cy = cellY + cs / 2;
 
-      // ── Phase 1: Charge (0–60ms) ──
-      if (exp.elapsed < 0.06) {
-        const t = exp.elapsed / 0.06;
+      // ── Phase 1: Charge (0–120ms) ──
+      if (exp.elapsed < 0.12) {
+        const t = exp.elapsed / 0.12;
 
-        // Cell background flash: 0→1 over 20ms, 1→0 over 20ms
+        // Cell background flash: 0→1 over 40ms, 1→0 over 40ms
         let flashAlpha: number;
-        if (exp.elapsed < 0.02) {
-          flashAlpha = exp.elapsed / 0.02;
-        } else if (exp.elapsed < 0.04) {
-          flashAlpha = 1 - (exp.elapsed - 0.02) / 0.02;
+        if (exp.elapsed < 0.04) {
+          flashAlpha = exp.elapsed / 0.04;
+        } else if (exp.elapsed < 0.08) {
+          flashAlpha = 1 - (exp.elapsed - 0.04) / 0.04;
         } else {
           flashAlpha = 0;
         }
@@ -1667,10 +1656,10 @@ export class BoardRenderer {
         }
       }
 
-      // ── Phase 2: Scatter (60ms–210ms, 150ms duration) ──
-      if (exp.elapsed >= 0.06 && exp.elapsed < 0.21) {
-        // Source cell: scale snaps back (1.12 → 0.9 → 1.0 over 60ms)
-        const releaseT = clamp01((exp.elapsed - 0.06) / 0.06);
+      // ── Phase 2: Scatter (120ms–420ms, 300ms duration) ──
+      if (exp.elapsed >= 0.12 && exp.elapsed < 0.42) {
+        // Source cell: scale snaps back (1.12 → 0.9 → 1.0 over 120ms)
+        const releaseT = clamp01((exp.elapsed - 0.12) / 0.12);
         if (releaseT < 0.5) {
           // Fade source cell background from player color → transparent
           const fadeAlpha = 0.3 * (1 - releaseT * 2);

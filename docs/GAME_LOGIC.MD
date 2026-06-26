@@ -702,33 +702,33 @@ export function createBoardState(
 
 ### Frontend Files
 
-| File                         | Purpose                                               |
-| ---------------------------- | ----------------------------------------------------- |
-| `lib/gameEngine.ts`          | Core game logic (explosions, scoring, validation)     |
-| `lib/types.ts`               | TypeScript interfaces (Cell, BoardState, Player, etc.)|
-| `lib/store.ts`               | Zustand state management                              |
-| `lib/rendering.ts`           | Canvas 2D rendering, animations, visual effects       |
-| `lib/soundManager.ts`        | Web Audio API synthesized sound effects               |
-| `lib/mockSocket.ts`          | Offline dev mock (AI opponent with 1s delay)          |
-| `lib/constants.ts`           | Grid sizes, animation timings, colors, game settings  |
-| `hooks/useSocket.ts`         | Socket.IO connection & event handling                 |
-| `hooks/useGameLogic.ts`      | Game move handler, timer, sounds, rejoin hooks        |
-| `components/Game.tsx`        | Main game component & phase routing                   |
-| `components/GameCanvas.tsx`  | Canvas renderer & click handler                       |
-| `components/GameOver.tsx`    | End screen with rankings & play again                 |
-| `components/Lobby.tsx`       | Game lobby, room creation & join                      |
-| `components/WaitingRoom.tsx` | Waiting for players, color picker, host start         |
-| `components/GameHUD.tsx`     | Player scores, turn indicator                         |
+| File                         | Purpose                                                |
+| ---------------------------- | ------------------------------------------------------ |
+| `lib/gameEngine.ts`          | Core game logic (explosions, scoring, validation)      |
+| `lib/types.ts`               | TypeScript interfaces (Cell, BoardState, Player, etc.) |
+| `lib/store.ts`               | Zustand state management                               |
+| `lib/rendering.ts`           | Canvas 2D rendering, animations, visual effects        |
+| `lib/soundManager.ts`        | Web Audio API synthesized sound effects                |
+| `lib/mockSocket.ts`          | Offline dev mock (AI opponent with 1s delay)           |
+| `lib/constants.ts`           | Grid sizes, animation timings, colors, game settings   |
+| `hooks/useSocket.ts`         | Socket.IO connection & event handling                  |
+| `hooks/useGameLogic.ts`      | Game move handler, timer, sounds, rejoin hooks         |
+| `components/Game.tsx`        | Main game component & phase routing                    |
+| `components/GameCanvas.tsx`  | Canvas renderer & click handler                        |
+| `components/GameOver.tsx`    | End screen with rankings & play again                  |
+| `components/Lobby.tsx`       | Game lobby, room creation & join                       |
+| `components/WaitingRoom.tsx` | Waiting for players, color picker, host start          |
+| `components/GameHUD.tsx`     | Player scores, turn indicator                          |
 
 ### Backend Files
 
-| File              | Purpose                                          |
-| ----------------- | ------------------------------------------------ |
-| `server/index.ts` | Express + Socket.IO server                       |
-|                   | Redis storage with in-memory Map fallback        |
-|                   | Room management (create, join, color change)     |
-|                   | Move validation, processing & broadcast          |
-|                   | Player connection / disconnection handling        |
+| File              | Purpose                                      |
+| ----------------- | -------------------------------------------- |
+| `server/index.ts` | Express + Socket.IO server                   |
+|                   | Redis storage with in-memory Map fallback    |
+|                   | Room management (create, join, color change) |
+|                   | Move validation, processing & broadcast      |
+|                   | Player connection / disconnection handling   |
 
 ---
 
@@ -739,7 +739,9 @@ export function createBoardState(
 #### `player:join`
 
 ```typescript
-{ playerName: string }
+{
+  playerName: string;
+}
 ```
 
 #### `room:create`
@@ -767,7 +769,9 @@ export function createBoardState(
 #### `game:start`
 
 ```typescript
-{ roomId: string }
+{
+  roomId: string;
+}
 ```
 
 #### `game:move`
@@ -801,19 +805,25 @@ export function createBoardState(
 #### `room:created`
 
 ```typescript
-{ room: GameRoom }
+{
+  room: GameRoom;
+}
 ```
 
 #### `room:updated`
 
 ```typescript
-{ room: GameRoom }
+{
+  room: GameRoom;
+}
 ```
 
 #### `game:started`
 
 ```typescript
-{ boardState: BoardState }
+{
+  boardState: BoardState;
+}
 ```
 
 #### `game:moveResult` (Consolidated Event)
@@ -877,7 +887,9 @@ export function createBoardState(
 #### `game:invalid-move`
 
 ```typescript
-{ reason: string }
+{
+  reason: string;
+}
 ```
 
 #### `color:unavailable`
